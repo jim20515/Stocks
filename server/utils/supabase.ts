@@ -1,8 +1,9 @@
 import { createClient } from '@supabase/supabase-js'
 
 export function useDb() {
+  const config = useRuntimeConfig()
   return createClient(
-    process.env.SUPABASE_URL!,
-    process.env.SUPABASE_KEY!
+    config.supabaseUrl as string,
+    config.supabaseKey as string,
   )
 }
