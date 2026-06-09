@@ -1,21 +1,25 @@
 <script setup lang="ts">
 const refreshKey = useState('portfolioRefreshKey', () => 0)
-const { data, refresh } = await useFetch('/api/portfolio/beta-summary', { key: 'beta-summary' })
+const { authHeaders } = useAuth()
+const { data, refresh } = await useFetch('/api/portfolio/beta-summary', { key: 'beta-summary', headers: authHeaders })
 
 watch(refreshKey, () => refresh())
 
 const d = computed(() => data.value as any)
 
 // 目標配置表單
-const form = ref({ x1: 70, x2: 20 })
+const form = ref({ x1: 70, x2: 20, cash: '' })
 const saving = ref(false)
 const msg = ref('')
 
-// 從 API 載入目標值
+// 從 API 載入目標值與現金
 watch(d, (val) => {
   if (val?.targetAlloc) {
     form.value.x1 = val.targetAlloc.x1
     form.value.x2 = val.targetAlloc.x2
+  }
+  if (val?.cash?.amount != null && form.value.cash === '') {
+    form.value.cash = String(val.cash.amount)
   }
 }, { immediate: true })
 
@@ -26,10 +30,11 @@ async function saveTargets() {
   if (formInvalid.value) return
   saving.value = true
   try {
-    const settings = await $fetch<any>('/api/portfolio/settings')
+    const settings = await $fetch<any>('/api/portfolio/settings', { headers: authHeaders.value })
     await $fetch('/api/portfolio/settings', {
       method: 'PUT',
-      body: { ...settings, targetAlloc1x: form.value.x1, targetAlloc2x: form.value.x2 },
+      headers: authHeaders.value,
+      body: { ...settings, targetAlloc1x: form.value.x1, targetAlloc2x: form.value.x2, cashAmount: Number(String(form.value.cash).replace(/,/g, '')) },
     })
     await refresh()
     msg.value = '已儲存'
@@ -57,9 +62,11 @@ const leverageBadge: Record<number, string> = {
 }
 
 function diffClass(actual: number, target: number) {
-  const diff = actual - target
-  if (Math.abs(diff) < 2) return 'text-green-600'
-  return diff > 0 ? 'text-red-500' : 'text-amber-500'
+  return actual >= target ? 'text-green-600' : 'text-red-500'
+}
+
+function barClass(actual: number, target: number) {
+  return actual >= target ? 'bg-green-400' : 'bg-red-400'
 }
 </script>
 
@@ -80,10 +87,19 @@ function diffClass(actual: number, target: number) {
             class="w-32 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300" />
         </div>
         <div>
-          <label class="block text-xs font-medium text-slate-600 mb-1.5">0倍槓桿（現金）目標（%）</label>
+          <label class="block text-xs font-medium text-slate-600 mb-1.5">0倍槓桿（類現金）目標（%）</label>
           <div class="w-32 px-3 py-2 text-sm border border-slate-100 rounded-lg bg-slate-50 text-slate-500 font-medium">
             {{ target0x }}%
           </div>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1.5">現金部位（元）</label>
+          <input
+            :value="form.cash !== '' ? Number(form.cash).toLocaleString('zh-TW') : ''"
+            type="text" inputmode="numeric" placeholder="例：3,500,000"
+            @focus="(e: any) => { e.target.value = String(form.cash) }"
+            @blur="(e: any) => { const n = Number(e.target.value.replace(/,/g,'')); if (!isNaN(n)) { form.cash = String(n); e.target.value = n.toLocaleString('zh-TW') } }"
+            class="w-40 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300" />
         </div>
         <div class="flex items-center gap-3">
           <button @click="saveTargets" :disabled="saving || formInvalid"
@@ -162,7 +178,7 @@ function diffClass(actual: number, target: number) {
                   :style="{ left: Math.min(row.target, 99) + '%' }" />
                 <!-- 實際進度條 -->
                 <div class="h-full rounded-full transition-all duration-500"
-                  :class="Math.abs(row.actual - row.target) < 2 ? 'bg-green-400' : row.actual > row.target ? 'bg-red-400' : 'bg-amber-400'"
+                  :class="barClass(row.actual, row.target)"
                   :style="{ width: Math.min(row.actual, 100) + '%' }" />
               </div>
             </td>

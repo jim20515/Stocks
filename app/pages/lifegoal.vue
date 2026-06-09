@@ -1,6 +1,7 @@
 <script setup lang="ts">
-const { data: projection, refresh: refreshProjection } = await useFetch<any>('/api/portfolio/life-projection', { key: 'life-projection' })
-const { data: settings } = await useFetch<any>('/api/portfolio/settings', { key: 'life-settings' })
+const { authHeaders } = useAuth()
+const { data: projection, refresh: refreshProjection } = await useFetch<any>('/api/portfolio/life-projection', { key: 'life-projection', headers: authHeaders })
+const { data: settings } = await useFetch<any>('/api/portfolio/settings', { key: 'life-settings', headers: authHeaders })
 
 const form = ref<Record<string, any>>({})
 const saving = ref(false)
@@ -9,13 +10,14 @@ const msg = ref('')
 watch(settings, (s) => {
   if (!s) return
   form.value = {
-    birthYear: s.birth_year,
+    startInvestYear: s.start_invest_year,
+    initialAge: s.initial_age,
+    initialAmount: s.initial_amount,
     annualContribution: s.annual_contribution,
     stopContributionYear: s.stop_contribution_year,
     expectedAnnualReturn: (Number(s.expected_annual_return) * 100).toFixed(1),
     cashAmount: s.cash_amount,
     targetBeta: s.target_beta,
-    initialAmount: s.initial_amount,
   }
 }, { immediate: true })
 
@@ -24,14 +26,16 @@ async function save() {
   try {
     await $fetch('/api/portfolio/settings', {
       method: 'PUT',
+      headers: authHeaders.value,
       body: {
-        birthYear: Number(form.value.birthYear),
+        startInvestYear: Number(form.value.startInvestYear),
+        initialAge: Number(form.value.initialAge),
+        initialAmount: Number(String(form.value.initialAmount).replace(/,/g, '')),
         annualContribution: Number(String(form.value.annualContribution).replace(/,/g, '')),
         stopContributionYear: Number(form.value.stopContributionYear),
         expectedAnnualReturn: Number(form.value.expectedAnnualReturn) / 100,
         cashAmount: Number(String(form.value.cashAmount).replace(/,/g, '')),
         targetBeta: Number(form.value.targetBeta),
-        initialAmount: Number(String(form.value.initialAmount).replace(/,/g, '')),
       },
     })
     await refreshProjection()
@@ -75,8 +79,20 @@ const milestones = computed(() => {
       <h3 class="text-sm font-semibold text-slate-800 mb-4">投資參數設定</h3>
       <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div>
-          <label class="block text-xs font-medium text-slate-600 mb-1.5">出生年份</label>
-          <input v-model="form.birthYear" type="number"
+          <label class="block text-xs font-medium text-slate-600 mb-1.5">開始投資年（西元）</label>
+          <input v-model="form.startInvestYear" type="number"
+            class="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1.5">初始年齡</label>
+          <input v-model="form.initialAge" type="number"
+            class="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1.5">初始資金（元）</label>
+          <input :value="form.initialAmount != null ? Number(form.initialAmount).toLocaleString('zh-TW') : ''"
+            type="text" inputmode="numeric"
+            @focus="onMoneyFocus" @blur="(e) => onMoneyBlur(e, 'initialAmount')"
             class="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300" />
         </div>
         <div>
@@ -94,13 +110,6 @@ const milestones = computed(() => {
         <div>
           <label class="block text-xs font-medium text-slate-600 mb-1.5">期望年報酬（%）</label>
           <input v-model="form.expectedAnnualReturn" type="number" step="0.1"
-            class="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300" />
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-slate-600 mb-1.5">現金部位（元）</label>
-          <input :value="form.cashAmount != null ? Number(form.cashAmount).toLocaleString('zh-TW') : ''"
-            type="text" inputmode="numeric"
-            @focus="onMoneyFocus" @blur="(e) => onMoneyBlur(e, 'cashAmount')"
             class="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300" />
         </div>
       </div>
@@ -125,9 +134,9 @@ const milestones = computed(() => {
 
       <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
         <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-          <h3 class="text-sm font-semibold text-slate-800">資產成長投影</h3>
+          <h3 class="text-sm font-semibold text-slate-800">資產成長試算</h3>
           <p class="text-xs text-slate-400">
-            起始資產 NT$ {{ fullMoney(projection.currentAssets) }}・年化 {{ (projection.settings.expectedAnnualReturn * 100).toFixed(1) }}%
+            起始 {{ projection.settings.startInvestYear }} 年・{{ projection.settings.initialAge }} 歲・NT$ {{ fullMoney(projection.settings.initialAmount) }}・年化 {{ (projection.settings.expectedAnnualReturn * 100).toFixed(1) }}%
           </p>
         </div>
         <div class="overflow-y-auto max-h-[520px]">
@@ -148,7 +157,7 @@ const milestones = computed(() => {
                   <div class="flex items-center gap-2">
                     <span class="font-medium text-slate-800">{{ row.year }}</span>
                     <span v-if="row.year === projection.currentYear"
-                      class="text-xs bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded font-medium">現在</span>
+                      class="text-xs bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded font-medium">今年</span>
                     <span v-if="row.year === projection.settings.stopContributionYear"
                       class="text-xs bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded font-medium">停投</span>
                   </div>

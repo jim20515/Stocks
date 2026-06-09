@@ -1,18 +1,15 @@
 const MIS_URL = 'https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch='
-const TWSE_DAY_ALL = 'https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL'
 const OTC_QUOTES = 'https://www.tpex.org.tw/openapi/v1/tpex_mainboard_quotes'
 const LISTED_URL = 'https://openapi.twse.com.tw/v1/opendata/t187ap03_L'
 const OTC_URL = 'https://openapi.twse.com.tw/v1/opendata/t187ap03_O'
 
-// MIS 回傳 key 為小寫，Ch 格式為 "tse_2330.tw"
 interface MisItem { c?: string; z?: string; y?: string; n?: string; ch?: string }
 interface MisResp { msgArray?: MisItem[] }
-interface TwsePrice { Code: string; Name: string; ClosingPrice: string }
 interface OtcPrice { SecuritiesCompanyCode: string; ClosePrice: string }
 interface CompanyInfo { 公司代號: string; 公司簡稱: string }
+interface TwseDayResp { stat?: string; title?: string; data?: string[][] }
 
 function parseMisPrice(item: MisItem): number | null {
-  // z = 最新成交價；若為 "-" 表示尚未成交，改用 y（昨收）
   for (const v of [item.z, item.y]) {
     if (v && v !== '-') {
       const n = parseFloat(v)
@@ -22,19 +19,41 @@ function parseMisPrice(item: MisItem): number | null {
   return null
 }
 
-// ch 欄位格式："tse_2330.tw" 或 "otc_6510.tw"
 function codeFromCh(ch: string | undefined): string | null {
   if (!ch) return null
   const m = ch.match(/(?:tse|otc)_(.+?)\.tw/)
   return m ? m[1].toUpperCase() : null
 }
 
-/** 查詢單一股票名稱與現價（優先 MIS 即時） */
+/** 從 TWSE 個股月報表取最新一筆收盤價與股票名稱 */
+async function fetchTwseDayLatest(code: string): Promise<{ price: number | null; name: string | null }> {
+  const today = new Date()
+  for (let offset = 0; offset <= 1; offset++) {
+    const d = new Date(today.getFullYear(), today.getMonth() - offset, 1)
+    const dateStr = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}01`
+    try {
+      const url = `https://www.twse.com.tw/exchangeReport/STOCK_DAY?response=json&date=${dateStr}&stockNo=${code}`
+      const resp = await $fetch<TwseDayResp>(url)
+      if (resp?.stat === 'OK' && resp.data?.length) {
+        const last = resp.data[resp.data.length - 1]
+        const p = parseFloat(last[6].replace(/,/g, ''))
+        // title 格式："115年06月 00675L 富邦臺灣加權正2  各日成交資訊"
+        const nameMatch = resp.title?.match(/\d{5,6}[A-Za-z]?\s+(.+?)\s{2,}/)
+          ?? resp.title?.match(/\S+\s+(.+?)\s*各日/)
+        const name = nameMatch?.[1]?.trim() ?? null
+        return { price: isNaN(p) ? null : p, name }
+      }
+    } catch {}
+  }
+  return { price: null, name: null }
+}
+
+/** 查詢單一股票名稱與現價 */
 export async function lookupStock(code: string): Promise<{ name: string; price: number | null } | null> {
+  // 1. MIS 即時
   for (const ex of ['tse', 'otc']) {
     try {
-      // 不 encode，直接拼接
-      const data = await $fetch<MisResp>(`${MIS_URL}${ex}_${code}.tw`)
+      const data = await $fetch<MisResp>(`${MIS_URL}${ex}_${code.toLowerCase()}.tw`)
       const item = data?.msgArray?.[0]
       if (item?.n?.trim()) {
         return { name: item.n.trim(), price: parseMisPrice(item) }
@@ -42,21 +61,16 @@ export async function lookupStock(code: string): Promise<{ name: string; price: 
     } catch {}
   }
 
-  // 盤後 fallback
-  try {
-    const list = await $fetch<TwsePrice[]>(TWSE_DAY_ALL)
-    const item = list?.find(s => s.Code.trim().toUpperCase() === code.toUpperCase())
-    if (item) {
-      const price = parseFloat(item.ClosingPrice.replace(/,/g, ''))
-      return { name: item.Name.trim(), price: isNaN(price) ? null : price }
-    }
-  } catch {}
+  // 2. TWSE 個股月報表（同時取名稱與最新收盤）
+  const twse = await fetchTwseDayLatest(code)
+  if (twse.name) return { name: twse.name, price: twse.price }
 
+  // 3. 公司代號列表（名稱 only）
   for (const url of [LISTED_URL, OTC_URL]) {
     try {
       const list = await $fetch<CompanyInfo[]>(url)
       const item = list?.find(c => c.公司代號.trim().toUpperCase() === code.toUpperCase())
-      if (item) return { name: item.公司簡稱.trim(), price: null }
+      if (item) return { name: item.公司簡稱.trim(), price: twse.price }
     } catch {}
   }
 
@@ -70,12 +84,12 @@ export async function fetchPrices(codes: string[]): Promise<Record<string, numbe
 
   const BATCH = 50
 
+  // 1. MIS 即時（盤中）
   for (const ex of ['tse', 'otc']) {
     const remaining = codes.filter(c => !(c.toUpperCase() in result))
     for (let i = 0; i < remaining.length; i += BATCH) {
       const batch = remaining.slice(i, i + BATCH)
-      // ⚠️ 不可 encode，| 必須是原始字元
-      const ex_ch = batch.map(c => `${ex}_${c}.tw`).join('|')
+      const ex_ch = batch.map(c => `${ex}_${c.toLowerCase()}.tw`).join('|')
       try {
         const data = await $fetch<MisResp>(`${MIS_URL}${ex_ch}`)
         for (const item of data?.msgArray ?? []) {
@@ -88,22 +102,16 @@ export async function fetchPrices(codes: string[]): Promise<Record<string, numbe
     }
   }
 
-  // TWSE 盤後 fallback
+  // 2. MIS 抓不到的 → TWSE 個股月報表（並行，永遠最新）
   const missing = codes.filter(c => !(c.toUpperCase() in result))
   if (missing.length) {
-    try {
-      const list = await $fetch<TwsePrice[]>(TWSE_DAY_ALL)
-      const missingSet = new Set(missing.map(c => c.toUpperCase()))
-      for (const item of list ?? []) {
-        const c = item.Code.trim().toUpperCase()
-        if (!missingSet.has(c)) continue
-        const p = parseFloat(item.ClosingPrice.replace(/,/g, ''))
-        if (!isNaN(p)) result[c] = p
-      }
-    } catch {}
+    await Promise.all(missing.map(async (code) => {
+      const { price } = await fetchTwseDayLatest(code)
+      if (price !== null) result[code.toUpperCase()] = price
+    }))
   }
 
-  // OTC 盤後 fallback
+  // 3. 還找不到的 → OTC 盤後（上櫃）
   const stillMissing = codes.filter(c => !(c.toUpperCase() in result))
   if (stillMissing.length) {
     try {

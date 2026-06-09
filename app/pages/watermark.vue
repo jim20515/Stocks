@@ -1,37 +1,18 @@
 <script setup lang="ts">
-const { data: holdings } = await useFetch<any[]>('/api/stockholdings')
+const { authHeaders } = useAuth()
+const { data: holdings } = await useFetch<any[]>('/api/stockholdings', { headers: authHeaders })
 const selected = ref(holdings.value?.[0]?.stock_code ?? '')
 const result = ref<any>(null)
 const loading = ref(false)
-const editAtv = ref('')
-const saving = ref(false)
-const msg = ref('')
 
 async function loadWatermark() {
   if (!selected.value) return
   loading.value = true
   result.value = null
   try {
-    result.value = await $fetch<any>(`/api/portfolio/watermark/${selected.value}`)
-    editAtv.value = result.value?.watermarkPrice ?? ''
+    result.value = await $fetch<any>(`/api/portfolio/watermark/${selected.value}`, { headers: authHeaders.value })
   } finally {
     loading.value = false
-  }
-}
-
-async function saveAtv() {
-  if (!editAtv.value) return
-  saving.value = true
-  try {
-    await $fetch(`/api/portfolio/watermark/${selected.value}`, {
-      method: 'PUT',
-      body: Number(editAtv.value),
-    })
-    msg.value = '水位已更新'
-    await loadWatermark()
-    setTimeout(() => msg.value = '', 2000)
-  } finally {
-    saving.value = false
   }
 }
 
@@ -46,7 +27,7 @@ if (selected.value) await loadWatermark()
 <template>
   <div class="space-y-5">
     <div class="bg-white rounded-xl border border-slate-200 p-5">
-      <div class="flex items-center gap-4 flex-wrap">
+      <div class="flex items-center gap-4">
         <div>
           <label class="block text-xs font-medium text-slate-600 mb-1.5">選擇持股</label>
           <select v-model="selected" @change="loadWatermark"
@@ -56,18 +37,7 @@ if (selected.value) await loadWatermark()
             </option>
           </select>
         </div>
-        <div>
-          <label class="block text-xs font-medium text-slate-600 mb-1.5">設定歷史最高水位（ATH）</label>
-          <div class="flex gap-2">
-            <input v-model="editAtv" type="number" step="0.01" placeholder="輸入 ATH 價格"
-              class="w-44 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300" />
-            <button @click="saveAtv" :disabled="saving"
-              class="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 transition disabled:opacity-50">
-              {{ saving ? '儲存中…' : '設定' }}
-            </button>
-          </div>
-        </div>
-        <p v-if="msg" class="text-sm text-green-600 font-medium mt-5">✓ {{ msg }}</p>
+        <p class="text-xs text-slate-400 mt-5">歷史最高水位（ATH）自動從 Yahoo Finance 抓取</p>
       </div>
     </div>
 
@@ -84,7 +54,7 @@ if (selected.value) await loadWatermark()
         <div class="bg-white rounded-xl p-5 border border-slate-200">
           <p class="text-xs text-slate-400 mb-1">歷史最高水位（ATH）</p>
           <p class="text-2xl font-bold text-slate-800">
-            {{ result.watermarkPrice ? result.watermarkPrice.toLocaleString() : '未設定' }}
+            {{ result.watermarkPrice ? result.watermarkPrice.toLocaleString() : '—' }}
           </p>
         </div>
         <div class="bg-white rounded-xl p-5 border border-slate-200"
@@ -154,7 +124,7 @@ if (selected.value) await loadWatermark()
       </div>
 
       <div v-else class="bg-white rounded-xl border border-slate-200 p-8 text-center text-slate-400 text-sm">
-        請在上方輸入 ATH 水位後點「設定」，即可查看各百分比對應的點位
+        無法取得 ATH 資料
       </div>
     </template>
   </div>

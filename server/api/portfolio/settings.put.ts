@@ -1,13 +1,16 @@
 
 export default defineEventHandler(async (event) => {
-  const client = useDb()
+  const userId = await requireUser(event)
+  const token = getBearerToken(event)
+  const client = useDb(token)
   const body = await readBody(event)
 
   const payload = {
-    id: 1,
-    birth_year:             Number(body.birthYear             ?? body.birth_year             ?? 1988),
+    user_id:                userId,
     cash_amount:            Number(body.cashAmount            ?? body.cash_amount            ?? 0),
     target_beta:            Number(body.targetBeta            ?? body.target_beta            ?? 1.46),
+    start_invest_year:      Number(body.startInvestYear       ?? body.start_invest_year      ?? new Date().getFullYear()),
+    initial_age:            Number(body.initialAge            ?? body.initial_age            ?? 30),
     initial_amount:         Number(body.initialAmount         ?? body.initial_amount         ?? 20000000),
     annual_contribution:    Number(body.annualContribution    ?? body.annual_contribution    ?? 5000000),
     stop_contribution_year: Number(body.stopContributionYear  ?? body.stop_contribution_year ?? 2030),
@@ -18,7 +21,7 @@ export default defineEventHandler(async (event) => {
 
   const { data, error } = await client
     .from('portfolio_settings')
-    .upsert(payload)
+    .upsert(payload, { onConflict: 'user_id' })
     .select()
     .single()
 

@@ -1,10 +1,12 @@
 
 export default defineEventHandler(async (event) => {
-  const client = useDb()
+  const userId = await requireUser(event)
+  const token = getBearerToken(event)
+  const client = useDb(token)
 
   const [{ data: settings }, { data: holdings }] = await Promise.all([
-    client.from('portfolio_settings').select('*').eq('id', 1).single(),
-    client.from('stock_holdings').select('*').order('stock_code'),
+    client.from('portfolio_settings').select('*').eq('user_id', userId).single(),
+    client.from('stock_holdings').select('*').eq('user_id', userId).order('stock_code'),
   ])
 
   const s = settings ?? { cash_amount: 0, target_beta: 1.46 }
@@ -40,7 +42,6 @@ export default defineEventHandler(async (event) => {
   const currentBeta = items.reduce((s, i) => s + i.betaContrib, 0)
   const target1x = Number((s as any).target_alloc_1x ?? 70)
   const target2x = Number((s as any).target_alloc_2x ?? 20)
-  // targetBeta 由目標配置自動計算：(1x% × 1) + (2x% × 2)
   const targetBeta = Math.round((target1x / 100 * 1 + target2x / 100 * 2) * 1e4) / 1e4
   const target0x = Math.max(0, 100 - target1x - target2x)
 

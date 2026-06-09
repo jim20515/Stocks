@@ -1,6 +1,8 @@
 
 export default defineEventHandler(async (event) => {
-  const client = useDb()
+  const userId = await requireUser(event)
+  const token = getBearerToken(event)
+  const client = useDb(token)
   const id = Number(getRouterParam(event, 'id'))
   if (!id || isNaN(id)) throw createError({ statusCode: 400, message: '無效的 ID' })
 
@@ -19,6 +21,7 @@ export default defineEventHandler(async (event) => {
       watermark_price: watermarkPrice ? Number(watermarkPrice) : null,
     })
     .eq('id', id)
+    .eq('user_id', userId)
     .select()
     .single()
 

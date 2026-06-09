@@ -1,21 +1,20 @@
 <script setup lang="ts">
 const route = useRoute()
+const { user, clearSession, authHeaders } = useAuth()
+const { $authFetch } = useNuxtApp()
+
 const showModal = ref(false)
 const editingId = ref<number | null>(null)
-const mode = ref<'stock' | 'cash'>('stock')
 const lookingUp = ref(false)
 const lookupError = ref('')
-const currentCash = ref<number | null>(null)
 
 const form = ref({ stockCode: '', stockName: '', shares: '', averageCost: '', buyDate: today(), leverageMultiplier: 1, watermarkPrice: '' })
-const cashForm = ref({ amount: '' })
 
 const refreshKey = useState('portfolioRefreshKey', () => 0)
 
 provide('refreshKey', refreshKey)
 provide('openEditModal', (holding: any) => {
   editingId.value = holding.id
-  mode.value = 'stock'
   form.value = {
     stockCode: holding.stockCode,
     stockName: holding.stockName,
@@ -33,23 +32,20 @@ function today() {
   return new Date().toISOString().slice(0, 10)
 }
 
-async function openModal() {
+function openModal() {
   showModal.value = true
-  mode.value = 'stock'
-  try {
-    const s = await $fetch<any>('/api/portfolio/settings')
-    currentCash.value = s.cash_amount
-    cashForm.value.amount = s.cash_amount
-  } catch { currentCash.value = null }
 }
 
 function closeModal() {
   showModal.value = false
   editingId.value = null
-  mode.value = 'stock'
   form.value = { stockCode: '', stockName: '', shares: '', averageCost: '', buyDate: today(), leverageMultiplier: 1, watermarkPrice: '' }
-  cashForm.value = { amount: '' }
   lookupError.value = ''
+}
+
+async function logout() {
+  clearSession()
+  await navigateTo('/login')
 }
 
 async function onCodeBlur() {
@@ -58,7 +54,7 @@ async function onCodeBlur() {
   lookupError.value = ''
   lookingUp.value = true
   try {
-    const data = await $fetch<any>(`/api/stockholdings/lookup/${code}`)
+    const data = await ($authFetch as any)<any>(`/api/stockholdings/lookup/${code}`)
     form.value.stockName = data.name
     if (data.price) form.value.averageCost = data.price
   } catch {
@@ -80,31 +76,21 @@ async function submitForm() {
     watermarkPrice: form.value.watermarkPrice ? Number(form.value.watermarkPrice) : null,
   }
   if (editingId.value) {
-    await $fetch(`/api/stockholdings/${editingId.value}`, { method: 'PUT', body: payload })
+    await ($authFetch as any)(`/api/stockholdings/${editingId.value}`, { method: 'PUT', body: payload })
   } else {
-    await $fetch('/api/stockholdings', { method: 'POST', body: payload })
+    await ($authFetch as any)('/api/stockholdings', { method: 'POST', body: payload })
   }
   refreshKey.value++
   closeModal()
 }
 
-async function submitCash() {
-  if (cashForm.value.amount === '') return
-  const s = await $fetch<any>('/api/portfolio/settings')
-  await $fetch('/api/portfolio/settings', {
-    method: 'PUT',
-    body: { ...s, cashAmount: Number(cashForm.value.amount) },
-  })
-  refreshKey.value++
-  closeModal()
-}
 </script>
 
 <template>
   <div class="min-h-screen bg-slate-50 flex">
     <LayoutSidebar />
     <div class="ml-60 flex-1 flex flex-col min-h-screen">
-      <LayoutAppHeader @add="openModal" />
+      <LayoutAppHeader @add="openModal" @logout="logout" />
       <main class="flex-1 p-6">
         <slot />
       </main>
@@ -125,44 +111,8 @@ async function submitCash() {
             </button>
           </div>
 
-          <!-- 模式切換（只在新增時顯示） -->
-          <div v-if="!editingId" class="px-6 pt-4">
-            <div class="flex gap-1 bg-slate-100 rounded-lg p-1">
-              <button @click="mode = 'stock'"
-                class="flex-1 py-1.5 text-sm font-medium rounded-md transition"
-                :class="mode === 'stock' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'">
-                持股
-              </button>
-              <button @click="mode = 'cash'"
-                class="flex-1 py-1.5 text-sm font-medium rounded-md transition"
-                :class="mode === 'cash' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'">
-                現金部位
-              </button>
-            </div>
-          </div>
-
-          <!-- 現金模式 -->
-          <div v-if="mode === 'cash'" class="p-6 space-y-4">
-            <div class="bg-green-50 border border-green-200 rounded-lg p-3 text-xs text-green-700">
-              現金部位為全域設定，新增後會直接覆蓋原有金額。
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-slate-600 mb-1.5">現金金額（元）</label>
-              <input
-                :value="cashForm.amount !== '' ? Number(cashForm.amount).toLocaleString('zh-TW') : ''"
-                type="text" inputmode="numeric" placeholder="例：3,500,000"
-                @focus="(e: any) => { e.target.value = String(cashForm.amount).replace(/,/g, '') }"
-                @blur="(e: any) => { const n = parseFloat(e.target.value.replace(/,/g,'')); if (!isNaN(n)) cashForm.amount = String(n) }"
-                @input="(e: any) => { cashForm.amount = e.target.value.replace(/,/g, '') }"
-                class="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300" />
-            </div>
-            <p v-if="currentCash !== null" class="text-xs text-slate-400">
-              目前現金：NT$ {{ Number(currentCash).toLocaleString() }}
-            </p>
-          </div>
-
-          <!-- 持股模式 -->
-          <div v-else class="p-6 space-y-4">
+          <!-- 持股表單 -->
+          <div class="p-6 space-y-4">
             <div>
               <label class="block text-xs font-medium text-slate-600 mb-1.5">股票代號</label>
               <input v-model="form.stockCode" type="text" placeholder="例：2330"
@@ -219,9 +169,9 @@ async function submitCash() {
               class="flex-1 px-4 py-2 text-sm font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition">
               取消
             </button>
-            <button @click="mode === 'cash' ? submitCash() : submitForm()"
+            <button @click="submitForm()"
               class="flex-1 px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition">
-              {{ editingId ? '儲存變更' : mode === 'cash' ? '設定現金部位' : '新增持股' }}
+              {{ editingId ? '儲存變更' : '新增持股' }}
             </button>
           </div>
         </div>

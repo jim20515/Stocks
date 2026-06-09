@@ -1,8 +1,9 @@
 <script setup lang="ts">
 const refreshKey = useState('portfolioRefreshKey', () => 0)
 const openEditModal = inject<(h: any) => void>('openEditModal', () => {})
+const { authHeaders } = useAuth()
 
-const { data: summary, refresh } = await useFetch('/api/stockholdings/summary', { key: 'stocks-summary' })
+const { data: summary, refresh } = await useFetch('/api/stockholdings/summary', { key: 'stocks-summary', headers: authHeaders })
 
 watch(refreshKey, () => refresh())
 
@@ -11,7 +12,7 @@ const s = computed(() => summary.value as any)
 
 async function remove(id: number, name: string) {
   if (!confirm(`確定刪除「${name}」？`)) return
-  await $fetch(`/api/stockholdings/${id}`, { method: 'DELETE' })
+  await $fetch(`/api/stockholdings/${id}`, { method: 'DELETE', headers: authHeaders.value })
   await refresh()
 }
 
@@ -53,6 +54,7 @@ function money(v: any) { return Number(v).toLocaleString('zh-TW') }
           <thead>
             <tr class="bg-slate-50 border-b border-slate-100">
               <th class="text-left px-5 py-3 text-xs font-medium text-slate-500">代號 / 名稱</th>
+              <th class="text-center px-4 py-3 text-xs font-medium text-slate-500">類型</th>
               <th class="text-right px-4 py-3 text-xs font-medium text-slate-500">持有股數</th>
               <th class="text-right px-4 py-3 text-xs font-medium text-slate-500">均成本</th>
               <th class="text-right px-4 py-3 text-xs font-medium text-slate-500">現價</th>
@@ -65,17 +67,29 @@ function money(v: any) { return Number(v).toLocaleString('zh-TW') }
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-50">
-            <tr v-for="h in items" :key="h.id" class="hover:bg-slate-50/50 transition">
+            <tr v-for="h in items" :key="h.id"
+              :class="h.leverageMultiplier === 0 ? 'bg-green-50/30 hover:bg-green-50/50' : 'hover:bg-slate-50/50'"
+              class="transition">
               <td class="px-5 py-3.5">
                 <div class="flex items-center gap-3">
-                  <div class="w-8 h-8 rounded-full bg-indigo-50 flex items-center justify-center shrink-0">
-                    <span class="text-xs font-bold text-indigo-600">{{ h.stockCode.slice(0,2) }}</span>
+                  <div class="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
+                    :class="h.leverageMultiplier === 0 ? 'bg-green-50' : 'bg-indigo-50'">
+                    <span class="text-xs font-bold"
+                      :class="h.leverageMultiplier === 0 ? 'text-green-600' : 'text-indigo-600'">
+                      {{ h.stockCode.slice(0,2) }}
+                    </span>
                   </div>
                   <div>
                     <p class="font-semibold text-slate-800">{{ h.stockCode }}</p>
                     <p class="text-xs text-slate-400">{{ h.stockName }}</p>
                   </div>
                 </div>
+              </td>
+              <td class="px-4 py-3.5 text-center">
+                <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-medium"
+                  :class="h.leverageMultiplier === 0 ? 'bg-green-50 text-green-600' : h.leverageMultiplier === 2 ? 'bg-orange-50 text-orange-600' : 'bg-indigo-50 text-indigo-600'">
+                  {{ h.leverageMultiplier === 0 ? '類現金' : h.leverageMultiplier + 'x' }}
+                </span>
               </td>
               <td class="px-4 py-3.5 text-right text-slate-700">{{ h.shares.toLocaleString() }}</td>
               <td class="px-4 py-3.5 text-right text-slate-700">{{ h.averageCost.toLocaleString() }}</td>
@@ -121,6 +135,7 @@ function money(v: any) { return Number(v).toLocaleString('zh-TW') }
                 </div>
               </td>
             </tr>
+
           </tbody>
         </table>
       </div>

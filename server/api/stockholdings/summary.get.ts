@@ -1,14 +1,19 @@
 
 export default defineEventHandler(async (event) => {
-  const client = useDb()
-  const { data: holdings, error } = await client
-    .from('stock_holdings')
-    .select('*')
-    .order('stock_code')
+  const userId = await requireUser(event)
+  const token = getBearerToken(event)
+  const client = useDb(token)
+
+  const [{ data: holdings, error }, { data: settings }] = await Promise.all([
+    client.from('stock_holdings').select('*').eq('user_id', userId).order('stock_code'),
+    client.from('portfolio_settings').select('cash_amount').eq('user_id', userId).single(),
+  ])
+
+  const cashAmount = Number((settings as any)?.cash_amount ?? 0)
 
   if (error) throw createError({ statusCode: 500, message: error.message })
   if (!holdings?.length) {
-    return { items: [], totalCost: 0, totalValue: 0, totalProfit: 0, totalProfitPct: 0, priceDate: null }
+    return { items: [], cashAmount, totalCost: 0, totalValue: 0, totalProfit: 0, totalProfitPct: 0, priceDate: null }
   }
 
   const codes = [...new Set(holdings.map(h => h.stock_code))]
@@ -46,6 +51,7 @@ export default defineEventHandler(async (event) => {
 
   return {
     items,
+    cashAmount,
     totalCost,
     totalValue,
     totalProfit: Math.round(totalProfit),

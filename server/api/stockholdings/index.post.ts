@@ -1,6 +1,8 @@
 
 export default defineEventHandler(async (event) => {
-  const client = useDb()
+  const userId = await requireUser(event)
+  const token = getBearerToken(event)
+  const client = useDb(token)
   const body = await readBody(event)
 
   const { stockCode, stockName, shares, averageCost, buyDate, leverageMultiplier, watermarkPrice } = body ?? {}
@@ -11,6 +13,7 @@ export default defineEventHandler(async (event) => {
   const { data, error } = await client
     .from('stock_holdings')
     .insert({
+      user_id: userId,
       stock_code: stockCode.trim().toUpperCase(),
       stock_name: stockName.trim(),
       shares: Number(shares),

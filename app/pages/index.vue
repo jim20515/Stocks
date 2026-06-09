@@ -2,7 +2,8 @@
 import { h } from 'vue'
 
 const refreshKey = useState('portfolioRefreshKey', () => 0)
-const { data: summary, refresh } = await useFetch('/api/stockholdings/summary', { key: 'dashboard-summary' })
+const { authHeaders } = useAuth()
+const { data: summary, refresh } = await useFetch('/api/stockholdings/summary', { key: 'dashboard-summary', headers: authHeaders })
 
 watch(refreshKey, () => refresh())
 
