@@ -38,9 +38,10 @@ export default defineEventHandler(async (event) => {
 
   const cashAlloc = totalValue > 0 ? Number(s.cash_amount) / totalValue : 0
   const currentBeta = items.reduce((s, i) => s + i.betaContrib, 0)
-  const targetBeta = Number(s.target_beta)
   const target1x = Number((s as any).target_alloc_1x ?? 70)
   const target2x = Number((s as any).target_alloc_2x ?? 20)
+  // targetBeta 由目標配置自動計算：(1x% × 1) + (2x% × 2)
+  const targetBeta = Math.round((target1x / 100 * 1 + target2x / 100 * 2) * 1e4) / 1e4
   const target0x = Math.max(0, 100 - target1x - target2x)
 
   const actual1x = totalValue > 0
