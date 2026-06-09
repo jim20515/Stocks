@@ -39,6 +39,16 @@ export default defineEventHandler(async (event) => {
   const cashAlloc = totalValue > 0 ? Number(s.cash_amount) / totalValue : 0
   const currentBeta = items.reduce((s, i) => s + i.betaContrib, 0)
   const targetBeta = Number(s.target_beta)
+  const target1x = Number((s as any).target_alloc_1x ?? 70)
+  const target2x = Number((s as any).target_alloc_2x ?? 20)
+  const target0x = Math.max(0, 100 - target1x - target2x)
+
+  const actual1x = totalValue > 0
+    ? items.filter(i => i.leverageMultiplier === 1).reduce((a, i) => a + i.marketValue, 0) / totalValue * 100 : 0
+  const actual2x = totalValue > 0
+    ? items.filter(i => i.leverageMultiplier === 2).reduce((a, i) => a + i.marketValue, 0) / totalValue * 100 : 0
+  const actual0x = totalValue > 0
+    ? (items.filter(i => i.leverageMultiplier === 0).reduce((a, i) => a + i.marketValue, 0) + Number(s.cash_amount)) / totalValue * 100 : 0
 
   return {
     items,
@@ -47,5 +57,11 @@ export default defineEventHandler(async (event) => {
     currentBeta: Math.round(currentBeta * 1e4) / 1e4,
     targetBeta,
     betaDiff: Math.round((currentBeta - targetBeta) * 1e4) / 1e4,
+    targetAlloc: { x1: target1x, x2: target2x, x0: target0x },
+    actualAlloc: {
+      x1: Math.round(actual1x * 100) / 100,
+      x2: Math.round(actual2x * 100) / 100,
+      x0: Math.round(actual0x * 100) / 100,
+    },
   }
 })

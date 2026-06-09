@@ -6,6 +6,39 @@ watch(refreshKey, () => refresh())
 
 const d = computed(() => data.value as any)
 
+// 目標配置表單
+const form = ref({ x1: 70, x2: 20 })
+const saving = ref(false)
+const msg = ref('')
+
+// 從 API 載入目標值
+watch(d, (val) => {
+  if (val?.targetAlloc) {
+    form.value.x1 = val.targetAlloc.x1
+    form.value.x2 = val.targetAlloc.x2
+  }
+}, { immediate: true })
+
+const target0x = computed(() => Math.max(0, 100 - form.value.x1 - form.value.x2))
+const formInvalid = computed(() => form.value.x1 + form.value.x2 > 100)
+
+async function saveTargets() {
+  if (formInvalid.value) return
+  saving.value = true
+  try {
+    const settings = await $fetch<any>('/api/portfolio/settings')
+    await $fetch('/api/portfolio/settings', {
+      method: 'PUT',
+      body: { ...settings, targetAlloc1x: form.value.x1, targetAlloc2x: form.value.x2 },
+    })
+    await refresh()
+    msg.value = '已儲存'
+    setTimeout(() => msg.value = '', 2000)
+  } finally {
+    saving.value = false
+  }
+}
+
 function pct(v: any) { return (Number(v) * 100).toFixed(2) + '%' }
 function money(v: any) { return Number(v).toLocaleString('zh-TW') }
 
@@ -22,19 +55,52 @@ const leverageBadge: Record<number, string> = {
   1: 'bg-blue-50 text-blue-600',
   2: 'bg-orange-50 text-orange-600',
 }
+
+function diffClass(actual: number, target: number) {
+  const diff = actual - target
+  if (Math.abs(diff) < 2) return 'text-green-600'
+  return diff > 0 ? 'text-red-500' : 'text-amber-500'
+}
 </script>
 
 <template>
   <div class="space-y-5">
+    <!-- 目標配置設定 -->
+    <div class="bg-white rounded-xl border border-slate-200 p-5">
+      <h3 class="text-sm font-semibold text-slate-800 mb-4">目標配置設定</h3>
+      <div class="flex flex-wrap items-end gap-4">
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1.5">1倍槓桿目標（%）</label>
+          <input v-model.number="form.x1" type="number" min="0" max="100" step="1"
+            class="w-32 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1.5">2倍槓桿目標（%）</label>
+          <input v-model.number="form.x2" type="number" min="0" max="100" step="1"
+            class="w-32 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1.5">0倍槓桿（現金）目標（%）</label>
+          <div class="w-32 px-3 py-2 text-sm border border-slate-100 rounded-lg bg-slate-50 text-slate-500 font-medium">
+            {{ target0x }}%
+          </div>
+        </div>
+        <div class="flex items-center gap-3">
+          <button @click="saveTargets" :disabled="saving || formInvalid"
+            class="px-5 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition">
+            {{ saving ? '儲存中…' : '套用' }}
+          </button>
+          <span v-if="formInvalid" class="text-xs text-red-500">1x + 2x 不可超過 100%</span>
+          <span v-else-if="msg" class="text-sm text-green-600 font-medium">✓ {{ msg }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 目前 vs 目標 概覽 -->
     <div v-if="d" class="grid grid-cols-2 lg:grid-cols-4 gap-4">
       <div class="bg-white rounded-xl p-5 border border-slate-200">
         <p class="text-xs text-slate-400 mb-1">總資產</p>
         <p class="text-xl font-bold text-slate-800">NT$ {{ money(d.totalValue) }}</p>
-      </div>
-      <div class="bg-white rounded-xl p-5 border border-slate-200">
-        <p class="text-xs text-slate-400 mb-1">現金部位</p>
-        <p class="text-xl font-bold text-slate-800">NT$ {{ money(d.cash.amount) }}</p>
-        <p class="text-xs text-slate-400 mt-0.5">佔比 {{ pct(d.cash.allocation) }}</p>
       </div>
       <div class="bg-white rounded-xl p-5 border border-slate-200">
         <p class="text-xs text-slate-400 mb-1">目前 Beta</p>
@@ -51,8 +117,61 @@ const leverageBadge: Record<number, string> = {
           {{ Math.abs(d.betaDiff) < 0.05 ? '✓ 接近目標' : d.betaDiff > 0 ? '略高於目標' : '略低於目標' }}
         </p>
       </div>
+      <div class="bg-white rounded-xl p-5 border border-slate-200">
+        <p class="text-xs text-slate-400 mb-1">現金部位</p>
+        <p class="text-xl font-bold text-slate-800">NT$ {{ money(d.cash.amount) }}</p>
+        <p class="text-xs text-slate-400 mt-0.5">佔比 {{ pct(d.cash.allocation) }}</p>
+      </div>
     </div>
 
+    <!-- 槓桿類型 目前 vs 目標 比較表 -->
+    <div v-if="d?.actualAlloc" class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      <div class="px-5 py-4 border-b border-slate-100">
+        <h3 class="text-sm font-semibold text-slate-800">槓桿配置 目前 vs 目標</h3>
+      </div>
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="bg-slate-50 border-b border-slate-100">
+            <th class="text-left px-5 py-3 text-xs font-medium text-slate-500">類型</th>
+            <th class="text-right px-5 py-3 text-xs font-medium text-slate-500">目前佔比</th>
+            <th class="text-right px-5 py-3 text-xs font-medium text-slate-500">目標佔比</th>
+            <th class="text-right px-5 py-3 text-xs font-medium text-slate-500">差距</th>
+            <th class="px-5 py-3 w-48"></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-50">
+          <tr v-for="row in [
+            { label: '1x 一般', badge: 'bg-blue-50 text-blue-600',    actual: d.actualAlloc.x1, target: d.targetAlloc.x1 },
+            { label: '2x 槓桿', badge: 'bg-orange-50 text-orange-600', actual: d.actualAlloc.x2, target: d.targetAlloc.x2 },
+            { label: '0x 類現金', badge: 'bg-slate-100 text-slate-500', actual: d.actualAlloc.x0, target: d.targetAlloc.x0 },
+          ]" :key="row.label" class="hover:bg-slate-50/50 transition">
+            <td class="px-5 py-3.5">
+              <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-medium" :class="row.badge">
+                {{ row.label }}
+              </span>
+            </td>
+            <td class="px-5 py-3.5 text-right font-semibold text-slate-800">{{ row.actual.toFixed(1) }}%</td>
+            <td class="px-5 py-3.5 text-right text-slate-500">{{ row.target.toFixed(1) }}%</td>
+            <td class="px-5 py-3.5 text-right font-semibold" :class="diffClass(row.actual, row.target)">
+              {{ (row.actual - row.target) > 0 ? '+' : '' }}{{ (row.actual - row.target).toFixed(1) }}%
+            </td>
+            <td class="px-5 py-3.5">
+              <div class="relative h-2 bg-slate-100 rounded-full overflow-hidden">
+                <!-- 目標線 -->
+                <div class="absolute top-0 bottom-0 w-0.5 bg-slate-400 z-10"
+                  :style="{ left: Math.min(row.target, 99) + '%' }" />
+                <!-- 實際進度條 -->
+                <div class="h-full rounded-full transition-all duration-500"
+                  :class="Math.abs(row.actual - row.target) < 2 ? 'bg-green-400' : row.actual > row.target ? 'bg-red-400' : 'bg-amber-400'"
+                  :style="{ width: Math.min(row.actual, 100) + '%' }" />
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- 持股配置明細 -->
     <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
       <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
         <h3 class="text-sm font-semibold text-slate-800">資產配置明細</h3>
