@@ -4,14 +4,16 @@ const OTC_QUOTES = 'https://www.tpex.org.tw/openapi/v1/tpex_mainboard_quotes'
 const LISTED_URL = 'https://openapi.twse.com.tw/v1/opendata/t187ap03_L'
 const OTC_URL = 'https://openapi.twse.com.tw/v1/opendata/t187ap03_O'
 
-interface MisItem { Ch?: string; Z?: string; Y?: string; N?: string }
+// MIS 回傳 key 為小寫，Ch 格式為 "tse_2330.tw"
+interface MisItem { c?: string; z?: string; y?: string; n?: string; ch?: string }
 interface MisResp { msgArray?: MisItem[] }
 interface TwsePrice { Code: string; Name: string; ClosingPrice: string }
 interface OtcPrice { SecuritiesCompanyCode: string; ClosePrice: string }
 interface CompanyInfo { 公司代號: string; 公司簡稱: string }
 
 function parseMisPrice(item: MisItem): number | null {
-  for (const v of [item.Z, item.Y]) {
+  // z = 最新成交價；若為 "-" 表示尚未成交，改用 y（昨收）
+  for (const v of [item.z, item.y]) {
     if (v && v !== '-') {
       const n = parseFloat(v)
       if (!isNaN(n)) return n
@@ -20,34 +22,40 @@ function parseMisPrice(item: MisItem): number | null {
   return null
 }
 
+// ch 欄位格式："tse_2330.tw" 或 "otc_6510.tw"
+function codeFromCh(ch: string | undefined): string | null {
+  if (!ch) return null
+  const m = ch.match(/(?:tse|otc)_(.+?)\.tw/)
+  return m ? m[1].toUpperCase() : null
+}
+
 /** 查詢單一股票名稱與現價（優先 MIS 即時） */
 export async function lookupStock(code: string): Promise<{ name: string; price: number | null } | null> {
-  // 1. MIS 即時（上市 + 上櫃）
   for (const ex of ['tse', 'otc']) {
     try {
+      // 不 encode，直接拼接
       const data = await $fetch<MisResp>(`${MIS_URL}${ex}_${code}.tw`)
       const item = data?.msgArray?.[0]
-      if (item?.N?.trim()) {
-        return { name: item.N.trim(), price: parseMisPrice(item) }
+      if (item?.n?.trim()) {
+        return { name: item.n.trim(), price: parseMisPrice(item) }
       }
     } catch {}
   }
 
-  // 2. 盤後資料 fallback
+  // 盤後 fallback
   try {
     const list = await $fetch<TwsePrice[]>(TWSE_DAY_ALL)
-    const item = list?.find(s => s.Code.trim().toLowerCase() === code.toLowerCase())
+    const item = list?.find(s => s.Code.trim().toUpperCase() === code.toUpperCase())
     if (item) {
       const price = parseFloat(item.ClosingPrice.replace(/,/g, ''))
       return { name: item.Name.trim(), price: isNaN(price) ? null : price }
     }
   } catch {}
 
-  // 3. 靜態公司清單（只有名稱）
   for (const url of [LISTED_URL, OTC_URL]) {
     try {
       const list = await $fetch<CompanyInfo[]>(url)
-      const item = list?.find(c => c.公司代號.trim().toLowerCase() === code.toLowerCase())
+      const item = list?.find(c => c.公司代號.trim().toUpperCase() === code.toUpperCase())
       if (item) return { name: item.公司簡稱.trim(), price: null }
     } catch {}
   }
@@ -55,22 +63,23 @@ export async function lookupStock(code: string): Promise<{ name: string; price: 
   return null
 }
 
-/** 批次取得多支股票股價 */
+/** 批次取得多支股票今日股價 */
 export async function fetchPrices(codes: string[]): Promise<Record<string, number>> {
   const result: Record<string, number> = {}
   if (!codes.length) return result
 
-  // MIS 批次（每次最多 50 支，上市 + 上櫃）
   const BATCH = 50
+
   for (const ex of ['tse', 'otc']) {
     const remaining = codes.filter(c => !(c.toUpperCase() in result))
     for (let i = 0; i < remaining.length; i += BATCH) {
       const batch = remaining.slice(i, i + BATCH)
+      // ⚠️ 不可 encode，| 必須是原始字元
       const ex_ch = batch.map(c => `${ex}_${c}.tw`).join('|')
       try {
-        const data = await $fetch<MisResp>(`${MIS_URL}${encodeURIComponent(ex_ch)}`)
+        const data = await $fetch<MisResp>(`${MIS_URL}${ex_ch}`)
         for (const item of data?.msgArray ?? []) {
-          const code = item.Ch?.replace('.tw', '').replace(`${ex}_`, '').toUpperCase()
+          const code = codeFromCh(item.ch)
           if (!code) continue
           const price = parseMisPrice(item)
           if (price !== null) result[code] = price
