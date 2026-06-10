@@ -21,7 +21,7 @@ async function submit() {
       body: { email: email.value, password: password.value },
     })
     setSession(data.accessToken, data.user)
-    await navigateTo('/')
+    window.location.href = '/'
   } catch (e: any) {
     error.value = e?.data?.message ?? '登入失敗，請再試一次'
   } finally {
