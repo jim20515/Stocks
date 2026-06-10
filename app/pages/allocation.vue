@@ -1,7 +1,7 @@
 <script setup lang="ts">
 const refreshKey = useState('portfolioRefreshKey', () => 0)
 const { authHeaders } = useAuth()
-const { data, refresh } = await useFetch('/api/portfolio/beta-summary', { key: 'beta-summary', headers: authHeaders })
+const { data, refresh } = await useAuthFetch('/api/portfolio/beta-summary', { key: 'beta-summary' })
 
 watch(refreshKey, () => refresh())
 
@@ -30,10 +30,10 @@ async function saveTargets() {
   if (formInvalid.value) return
   saving.value = true
   try {
-    const settings = await $fetch<any>('/api/portfolio/settings', { headers: authHeaders.value })
+    const settings = await $fetch<any>('/api/portfolio/settings', { headers: authHeaders.value as HeadersInit })
     await $fetch('/api/portfolio/settings', {
       method: 'PUT',
-      headers: authHeaders.value,
+      headers: authHeaders.value as HeadersInit,
       body: { ...settings, targetAlloc1x: form.value.x1, targetAlloc2x: form.value.x2, cashAmount: Number(String(form.value.cash).replace(/,/g, '')) },
     })
     await refresh()
@@ -46,6 +46,12 @@ async function saveTargets() {
 
 function pct(v: any) { return (Number(v) * 100).toFixed(2) + '%' }
 function money(v: any) { return Number(v).toLocaleString('zh-TW') }
+
+const refreshing = ref(false)
+async function refreshPrices() {
+  refreshing.value = true
+  try { await refresh() } finally { refreshing.value = false }
+}
 
 const betaDiffClass = computed(() => {
   if (!d.value) return ''
@@ -76,15 +82,21 @@ const aggregatedItems = computed(() => {
   const map: Record<string, any> = {}
   for (const h of items) {
     if (!map[h.stockCode]) {
-      map[h.stockCode] = { ...h, shares: 0, marketValue: 0 }
+      map[h.stockCode] = { ...h, shares: 0, marketValue: 0, totalBuyCost: 0, totalBuyShares: 0 }
     }
     map[h.stockCode].shares += h.shares
     map[h.stockCode].marketValue += h.marketValue
+    // 只有買入（正股數）才計入均成本
+    if (h.shares > 0) {
+      map[h.stockCode].totalBuyCost += Number(h.averageCost) * h.shares
+      map[h.stockCode].totalBuyShares += h.shares
+    }
   }
   return Object.values(map).filter(h => h.shares > 0).map(h => ({
     ...h,
     shares: h.shares,
     marketValue: Math.round(h.marketValue),
+    avgCost: h.totalBuyShares > 0 ? Math.round(h.totalBuyCost / h.totalBuyShares * 100) / 100 : null,
     allocation: totalValue > 0 ? h.marketValue / totalValue : 0,
     betaContrib: totalValue > 0 ? (h.marketValue / totalValue) * h.leverageMultiplier : 0,
   }))
@@ -174,7 +186,7 @@ function goPage(p: number) {
     </div>
 
     <!-- 目前 vs 目標 概覽 -->
-    <div v-if="d" class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+    <div v-if="d" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
       <div class="bg-white rounded-xl p-5 border border-slate-200">
         <p class="text-xs text-slate-400 mb-1">總資產</p>
         <p class="text-xl font-bold text-slate-800">NT$ {{ money(d.totalValue) }}</p>
@@ -252,7 +264,16 @@ function goPage(p: number) {
     <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
       <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
         <h3 class="text-sm font-semibold text-slate-800">資產配置統計</h3>
-        <p class="text-xs text-slate-400">Beta = 持股佔比 × 槓桿倍數</p>
+        <div class="flex items-center gap-2">
+          <button @click="refreshPrices" :disabled="refreshing"
+            class="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-slate-500 border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition">
+            <svg :class="refreshing ? 'animate-spin' : ''" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            更新股價
+          </button>
+          <p class="text-xs text-slate-400">Beta = 持股佔比 × 槓桿倍數</p>
+        </div>
       </div>
 
       <div v-if="!d" class="py-10 text-center text-sm text-slate-400">載入中…</div>
@@ -271,6 +292,9 @@ function goPage(p: number) {
               </th>
               <th class="text-right px-4 py-3 text-xs font-medium text-slate-500 cursor-pointer select-none hover:text-indigo-600" @click="toggleSort('currentPrice')">
                 現價 <span class="ml-1 opacity-50">{{ sortKey === 'currentPrice' ? (sortDir === 'asc' ? '↑' : '↓') : '↕' }}</span>
+              </th>
+              <th class="text-right px-4 py-3 text-xs font-medium text-slate-500 cursor-pointer select-none hover:text-indigo-600" @click="toggleSort('avgCost')">
+                均成本 <span class="ml-1 opacity-50">{{ sortKey === 'avgCost' ? (sortDir === 'asc' ? '↑' : '↓') : '↕' }}</span>
               </th>
               <th class="text-right px-4 py-3 text-xs font-medium text-slate-500 cursor-pointer select-none hover:text-indigo-600" @click="toggleSort('marketValue')">
                 市值 <span class="ml-1 opacity-50">{{ sortKey === 'marketValue' ? (sortDir === 'asc' ? '↑' : '↓') : '↕' }}</span>
@@ -306,6 +330,9 @@ function goPage(p: number) {
               <td class="px-4 py-3.5 text-right text-slate-600">{{ h.shares.toLocaleString() }}</td>
               <td class="px-4 py-3.5 text-right text-slate-700">
                 {{ h.currentPrice ? h.currentPrice.toLocaleString() : '—' }}
+              </td>
+              <td class="px-4 py-3.5 text-right text-slate-500">
+                {{ h.leverageMultiplier === 0 ? '—' : (h.avgCost != null ? h.avgCost.toLocaleString() : '—') }}
               </td>
               <td class="px-4 py-3.5 text-right font-medium text-slate-800">{{ money(h.marketValue) }}</td>
               <td class="px-4 py-3.5 text-right text-slate-600">{{ pct(h.allocation) }}</td>

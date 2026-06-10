@@ -83,7 +83,7 @@ const editingId = ref<number | null>(null)
 const lookingUp = ref(false)
 const lookupError = ref('')
 
-const form = ref({ stockCode: '', stockName: '', shares: '', averageCost: '', buyDate: today(), leverageMultiplier: 1, watermarkPrice: '' })
+const form = ref({ stockCode: '', stockName: '', shares: '', averageCost: '', buyDate: today(), leverageMultiplier: 1, watermarkPrice: '', tradeType: 'buy' as 'buy' | 'sell' })
 
 const refreshKey = useState('portfolioRefreshKey', () => 0)
 
@@ -114,7 +114,7 @@ function openModal() {
 function closeModal() {
   showModal.value = false
   editingId.value = null
-  form.value = { stockCode: '', stockName: '', shares: '', averageCost: '', buyDate: today(), leverageMultiplier: 1, watermarkPrice: '' }
+  form.value = { stockCode: '', stockName: '', shares: '', averageCost: '', buyDate: today(), leverageMultiplier: 1, watermarkPrice: '', tradeType: 'buy' }
   lookupError.value = ''
 }
 
@@ -123,15 +123,33 @@ async function logout() {
   await navigateTo('/login')
 }
 
+function inferLeverage(code: string): number {
+  const upper = code.trim().toUpperCase()
+  if (upper.endsWith('L')) return 2
+  if (upper.endsWith('B')) return 0
+  return 1
+}
+
 async function onCodeBlur() {
   const code = form.value.stockCode.trim()
   if (!code) return
   lookupError.value = ''
+  form.value.leverageMultiplier = inferLeverage(code)
   lookingUp.value = true
   try {
     const data = await ($authFetch as any)<any>(`/api/stockholdings/lookup/${code}`)
     form.value.stockName = data.name
-    if (data.price) form.value.averageCost = data.price
+    if (form.value.tradeType === 'sell') {
+      // 賣出：帶入加權均成本
+      const summary = await ($authFetch as any)<any>('/api/stockholdings/summary')
+      const holdings: any[] = summary?.items ?? []
+      const buyLots = holdings.filter((h: any) => h.stockCode.toUpperCase() === code.toUpperCase() && h.shares > 0)
+      const totalShares = buyLots.reduce((s: number, h: any) => s + h.shares, 0)
+      const totalCost = buyLots.reduce((s: number, h: any) => s + h.averageCost * h.shares, 0)
+      form.value.averageCost = totalShares > 0 ? String(Math.round(totalCost / totalShares * 100) / 100) : ''
+    } else {
+      if (data.price) form.value.averageCost = data.price
+    }
   } catch {
     lookupError.value = '查無此代號'
   } finally {
@@ -144,7 +162,7 @@ async function submitForm() {
   const payload = {
     stockCode: form.value.stockCode.trim(),
     stockName: form.value.stockName.trim() || form.value.stockCode.trim(),
-    shares: Number(form.value.shares),
+    shares: form.value.tradeType === 'sell' ? -Math.abs(Number(form.value.shares)) : Math.abs(Number(form.value.shares)),
     averageCost: Number(form.value.averageCost),
     buyDate: form.value.buyDate,
     leverageMultiplier: Number(form.value.leverageMultiplier),
@@ -167,7 +185,7 @@ async function submitForm() {
     <div v-if="sidebarOpen" class="fixed inset-0 bg-black/40 z-30 md:hidden" @click="sidebarOpen = false" />
 
     <LayoutSidebar :open="sidebarOpen" @close="sidebarOpen = false" />
-    <div class="md:ml-60 flex-1 flex flex-col min-h-screen">
+    <div class="md:ml-60 flex-1 flex flex-col min-h-screen overflow-x-hidden">
       <LayoutAppHeader @add="openModal" @import="triggerImport" @logout="logout" @menu="sidebarOpen = true" />
       <main class="flex-1 p-4 md:p-6">
         <slot />
@@ -252,14 +270,14 @@ async function submitForm() {
       </div>
     </Transition>
 
-    <!-- 新增 / 編輯持股 Modal -->
+    <!-- 新增 / 編輯交易 Modal -->
     <Transition name="fade">
       <div v-if="showModal"
         class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
         @click.self="closeModal">
         <div class="bg-white rounded-2xl w-full max-w-lg shadow-xl">
           <div class="flex items-center justify-between p-6 border-b border-slate-100">
-            <h2 class="text-base font-semibold text-slate-800">{{ editingId ? '編輯持股' : '新增持股' }}</h2>
+            <h2 class="text-base font-semibold text-slate-800">{{ editingId ? '編輯交易' : '新增交易' }}</h2>
             <button @click="closeModal" class="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 transition">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -267,8 +285,22 @@ async function submitForm() {
             </button>
           </div>
 
-          <!-- 持股表單 -->
+          <!-- 交易表單 -->
           <div class="p-6 space-y-4">
+            <!-- 買入 / 賣出切換 -->
+            <div v-if="!editingId" class="flex gap-2">
+              <button @click="form.tradeType = 'buy'"
+                :class="form.tradeType === 'buy' ? 'bg-red-500 text-white border-red-500' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'"
+                class="flex-1 py-2 text-sm font-semibold rounded-lg border transition">
+                買入
+              </button>
+              <button @click="form.tradeType = 'sell'"
+                :class="form.tradeType === 'sell' ? 'bg-green-500 text-white border-green-500' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'"
+                class="flex-1 py-2 text-sm font-semibold rounded-lg border transition">
+                賣出
+              </button>
+            </div>
+
             <div>
               <label class="block text-xs font-medium text-slate-600 mb-1.5">股票代號</label>
               <input v-model="form.stockCode" type="text" placeholder="例：2330"
@@ -286,35 +318,40 @@ async function submitForm() {
             </div>
             <div class="grid grid-cols-2 gap-4">
               <div>
-                <label class="block text-xs font-medium text-slate-600 mb-1.5">持有股數</label>
+                <label class="block text-xs font-medium text-slate-600 mb-1.5">交易股數</label>
                 <input v-model="form.shares" type="number" min="1" placeholder="例：1000（1張）"
                   class="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300" />
               </div>
               <div>
                 <label class="block text-xs font-medium text-slate-600 mb-1.5">
                   平均成本（每股）
-                  <span v-if="form.averageCost && !editingId" class="ml-1 font-normal text-indigo-400">← 已帶入現價</span>
+                  <span v-if="form.tradeType === 'sell'" class="ml-1 font-normal text-green-500">← 均成本自動帶入</span>
+                  <span v-else-if="form.averageCost && !editingId" class="ml-1 font-normal text-indigo-400">← 已帶入現價</span>
                 </label>
                 <input
                   :value="form.averageCost !== '' ? Number(form.averageCost).toLocaleString('zh-TW') : ''"
-                  type="text" inputmode="decimal" placeholder="輸入代號後自動帶入現價"
-                  @focus="(e: any) => { e.target.value = String(form.averageCost).replace(/,/g, '') }"
-                  @blur="(e: any) => { const n = parseFloat(e.target.value.replace(/,/g,'')); if (!isNaN(n)) form.averageCost = String(n) }"
-                  @input="(e: any) => { form.averageCost = e.target.value.replace(/,/g, '') }"
+                  type="text" inputmode="decimal" placeholder="輸入代號後自動帶入"
+                  :readonly="form.tradeType === 'sell'"
+                  @focus="(e: any) => { if (form.tradeType !== 'sell') e.target.value = String(form.averageCost).replace(/,/g, '') }"
+                  @blur="(e: any) => { if (form.tradeType !== 'sell') { const n = parseFloat(e.target.value.replace(/,/g,'')); if (!isNaN(n)) form.averageCost = String(n) } }"
+                  @input="(e: any) => { if (form.tradeType !== 'sell') form.averageCost = e.target.value.replace(/,/g, '') }"
+                  :class="form.tradeType === 'sell' ? 'bg-slate-50 text-slate-400 cursor-not-allowed' : ''"
                   class="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300" />
               </div>
             </div>
             <div>
               <label class="block text-xs font-medium text-slate-600 mb-1.5">持股類型</label>
               <select v-model="form.leverageMultiplier"
-                class="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white">
+                :disabled="!editingId"
+                :class="!editingId ? 'bg-slate-50 text-slate-400 cursor-not-allowed' : 'bg-white'"
+                class="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300">
                 <option :value="1">1x 一般（Beta 貢獻 ×1）</option>
                 <option :value="2">2x 槓桿（Beta 貢獻 ×2）</option>
                 <option :value="0">類現金（Beta 貢獻 0）</option>
               </select>
             </div>
             <div>
-              <label class="block text-xs font-medium text-slate-600 mb-1.5">買入日期</label>
+              <label class="block text-xs font-medium text-slate-600 mb-1.5">交易日期</label>
               <input v-model="form.buyDate" type="date"
                 class="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300" />
             </div>
@@ -326,8 +363,9 @@ async function submitForm() {
               取消
             </button>
             <button @click="submitForm()"
-              class="flex-1 px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition">
-              {{ editingId ? '儲存變更' : '新增持股' }}
+              class="flex-1 px-4 py-2 text-sm font-medium text-white rounded-lg transition"
+              :class="form.tradeType === 'sell' ? 'bg-green-500 hover:bg-green-600' : 'bg-red-500 hover:bg-red-600'">
+              {{ editingId ? '儲存變更' : '新增交易' }}
             </button>
           </div>
         </div>

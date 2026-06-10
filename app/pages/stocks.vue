@@ -3,16 +3,36 @@ const refreshKey = useState('portfolioRefreshKey', () => 0)
 const openEditModal = inject<(h: any) => void>('openEditModal', () => {})
 const { authHeaders } = useAuth()
 
-const { data: summary, refresh } = await useFetch('/api/stockholdings/summary', { key: 'stocks-summary', headers: authHeaders })
+const { data: summary, refresh } = await useAuthFetch('/api/stockholdings/summary', { key: 'stocks-summary' })
 
 watch(refreshKey, () => refresh())
 
 const allItems = computed(() => (summary.value as any)?.items ?? [])
 const s = computed(() => summary.value as any)
 
+// 篩選
+const filterCode = ref('')
+const filterProfitPct = ref<number | ''>('')
+
+const filteredItems = computed(() => {
+  return allItems.value.filter((h: any) => {
+    if (filterCode.value && !h.stockCode.toLowerCase().includes(filterCode.value.toLowerCase()) && !h.stockName.includes(filterCode.value)) return false
+    if (filterProfitPct.value !== '' && h.profitPct < Number(filterProfitPct.value)) return false
+    return true
+  })
+})
+
+function clearFilters() {
+  filterCode.value = ''
+  filterProfitPct.value = ''
+  currentPage.value = 1
+}
+
+const hasFilter = computed(() => filterCode.value || filterProfitPct.value !== '')
+
 // 排序
-const sortKey = ref<string>('')
-const sortDir = ref<'asc' | 'desc'>('asc')
+const sortKey = ref<string>('buyDate')
+const sortDir = ref<'asc' | 'desc'>('desc')
 
 function toggleSort(key: string) {
   if (sortKey.value === key) {
@@ -25,8 +45,9 @@ function toggleSort(key: string) {
 }
 
 const sortedItems = computed(() => {
-  if (!sortKey.value) return allItems.value
-  return [...allItems.value].sort((a, b) => {
+  const base = filteredItems.value
+  if (!sortKey.value) return base
+  return [...base].sort((a, b) => {
     const av = a[sortKey.value]
     const bv = b[sortKey.value]
     if (av == null) return 1
@@ -52,42 +73,81 @@ function goPage(p: number) {
 
 async function remove(id: number, name: string) {
   if (!confirm(`確定刪除「${name}」？`)) return
-  await $fetch(`/api/stockholdings/${id}`, { method: 'DELETE', headers: authHeaders.value })
+  await $fetch(`/api/stockholdings/${id}`, { method: 'DELETE', headers: authHeaders.value as HeadersInit })
   await refresh()
 }
 
 function money(v: any) { return Number(v).toLocaleString('zh-TW') }
+
+const refreshing = ref(false)
+async function refreshPrices() {
+  refreshing.value = true
+  try { await refresh() } finally { refreshing.value = false }
+}
 </script>
 
 <template>
   <div class="space-y-5">
-    <div v-if="s" class="grid grid-cols-3 gap-4">
-      <div class="bg-white rounded-xl p-5 border border-slate-200">
+    <div v-if="s" class="grid grid-cols-3 gap-3">
+      <div class="bg-white rounded-xl p-3 sm:p-5 border border-slate-200">
         <p class="text-xs text-slate-400 mb-1">總成本</p>
-        <p class="text-xl font-bold text-slate-800">NT$ {{ money(s.totalCost) }}</p>
+        <p class="text-sm sm:text-xl font-bold text-slate-800 truncate">{{ money(s.totalCost) }}</p>
       </div>
-      <div class="bg-white rounded-xl p-5 border border-slate-200">
+      <div class="bg-white rounded-xl p-3 sm:p-5 border border-slate-200">
         <p class="text-xs text-slate-400 mb-1">總市值</p>
-        <p class="text-xl font-bold text-slate-800">NT$ {{ money(s.totalValue) }}</p>
+        <p class="text-sm sm:text-xl font-bold text-slate-800 truncate">{{ money(s.totalValue) }}</p>
       </div>
-      <div class="bg-white rounded-xl p-5 border border-slate-200"
+      <div class="bg-white rounded-xl p-3 sm:p-5 border border-slate-200"
         :class="s.totalProfit >= 0 ? 'border-l-4 border-l-red-400' : 'border-l-4 border-l-green-500'">
         <p class="text-xs text-slate-400 mb-1">總損益</p>
-        <p class="text-xl font-bold" :class="s.totalProfit >= 0 ? 'text-red-500' : 'text-green-600'">
-          {{ s.totalProfit >= 0 ? '+' : '' }}NT$ {{ money(s.totalProfit) }}
-          <span class="text-sm font-medium ml-1">({{ s.totalProfitPct >= 0 ? '+' : '' }}{{ s.totalProfitPct }}%)</span>
+        <p class="text-sm sm:text-xl font-bold truncate" :class="s.totalProfit >= 0 ? 'text-red-500' : 'text-green-600'">
+          {{ s.totalProfit >= 0 ? '+' : '' }}{{ money(s.totalProfit) }}
+        </p>
+        <p class="text-xs font-medium mt-0.5" :class="s.totalProfit >= 0 ? 'text-red-400' : 'text-green-500'">
+          {{ s.totalProfitPct >= 0 ? '+' : '' }}{{ s.totalProfitPct }}%
         </p>
       </div>
     </div>
 
     <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      <!-- 篩選列 -->
+      <div class="flex items-center gap-3 px-5 py-3 border-b border-slate-100">
+        <div>
+          <label class="block text-xs font-medium text-slate-500 mb-1">代號 / 名稱</label>
+          <input v-model="filterCode" type="text" placeholder="搜尋…" @input="currentPage = 1"
+            class="w-32 px-2.5 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-500 mb-1">損益% 大於</label>
+          <div class="flex items-center gap-1">
+            <input v-model.number="filterProfitPct" type="number" placeholder="例：10" @input="currentPage = 1"
+              class="w-24 px-2.5 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+            <span class="text-sm text-slate-400">%</span>
+          </div>
+        </div>
+        <button v-if="hasFilter" @click="clearFilters"
+          class="mt-4 px-3 py-1.5 text-xs font-medium text-slate-500 border border-slate-200 rounded-lg hover:bg-slate-50 transition">
+          清除篩選
+        </button>
+        <span v-if="hasFilter" class="mt-4 text-xs text-slate-400">共 {{ sortedItems.length }} 筆</span>
+      </div>
+
       <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-        <h3 class="text-sm font-semibold text-slate-800">持股明細</h3>
-        <p class="text-xs text-slate-400">股價來源：{{ s?.priceDate || '—' }}</p>
+        <h3 class="text-sm font-semibold text-slate-800">交易明細</h3>
+        <div class="flex items-center gap-2">
+          <button @click="refreshPrices" :disabled="refreshing"
+            class="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-slate-500 border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition">
+            <svg :class="refreshing ? 'animate-spin' : ''" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            更新股價
+          </button>
+          <p class="text-xs text-slate-400">股價來源：{{ s?.priceDate || '—' }}</p>
+        </div>
       </div>
 
       <div v-if="!allItems.length" class="py-12 text-center text-sm text-slate-400">
-        尚無持股，點右上角「新增持股」開始記錄
+        尚無交易，點右上角「新增交易」開始記錄
       </div>
       <div v-else class="overflow-x-auto" >
         <table class="w-full text-sm">
@@ -102,7 +162,7 @@ function money(v: any) { return Number(v).toLocaleString('zh-TW') }
                 <span class="ml-1 opacity-50">{{ sortKey === 'leverageMultiplier' ? (sortDir === 'asc' ? '↑' : '↓') : '↕' }}</span>
               </th>
               <th class="text-right px-4 py-3 text-xs font-medium text-slate-500 cursor-pointer select-none hover:text-indigo-600" @click="toggleSort('shares')">
-                持有股數
+                交易股數
                 <span class="ml-1 opacity-50">{{ sortKey === 'shares' ? (sortDir === 'asc' ? '↑' : '↓') : '↕' }}</span>
               </th>
               <th class="text-right px-4 py-3 text-xs font-medium text-slate-500 cursor-pointer select-none hover:text-indigo-600" @click="toggleSort('averageCost')">
@@ -130,7 +190,7 @@ function money(v: any) { return Number(v).toLocaleString('zh-TW') }
                 <span class="ml-1 opacity-50">{{ sortKey === 'profitPct' ? (sortDir === 'asc' ? '↑' : '↓') : '↕' }}</span>
               </th>
               <th class="text-left px-4 py-3 text-xs font-medium text-slate-500 cursor-pointer select-none hover:text-indigo-600" @click="toggleSort('buyDate')">
-                買入日
+                交易日
                 <span class="ml-1 opacity-50">{{ sortKey === 'buyDate' ? (sortDir === 'asc' ? '↑' : '↓') : '↕' }}</span>
               </th>
               <th class="px-4 py-3"></th>

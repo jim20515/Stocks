@@ -1,6 +1,6 @@
 <script setup lang="ts">
 const { authHeaders } = useAuth()
-const { data: summary } = await useFetch<any>('/api/portfolio/beta-summary', { headers: authHeaders })
+const { data: summary } = await useAuthFetch<any>('/api/portfolio/beta-summary')
 
 // 依 stockCode 去重，取唯一持股清單
 const holdings = computed(() => {
@@ -21,7 +21,7 @@ async function loadWatermark() {
   loading.value = true
   result.value = null
   try {
-    result.value = await $fetch<any>(`/api/portfolio/watermark/${selected.value}`, { headers: authHeaders.value })
+    result.value = await $fetch<any>(`/api/portfolio/watermark/${selected.value}`, { headers: authHeaders.value as HeadersInit })
   } finally {
     loading.value = false
   }
@@ -38,7 +38,7 @@ if (selected.value) await loadWatermark()
 <template>
   <div class="space-y-5">
     <div class="bg-white rounded-xl border border-slate-200 p-5">
-      <div class="flex items-center gap-4">
+      <div class="flex flex-wrap items-center gap-4">
         <div>
           <label class="block text-xs font-medium text-slate-600 mb-1.5">選擇持股</label>
           <select v-model="selected" @change="loadWatermark"
@@ -55,7 +55,7 @@ if (selected.value) await loadWatermark()
     <div v-if="loading" class="py-10 text-center text-sm text-slate-400">載入中…</div>
 
     <template v-if="result">
-      <div class="grid grid-cols-3 gap-4">
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div class="bg-white rounded-xl p-5 border border-slate-200">
           <p class="text-xs text-slate-400 mb-1">目前股價</p>
           <p class="text-2xl font-bold text-slate-800">

@@ -2,12 +2,7 @@
 import { h } from 'vue'
 
 const refreshKey = useState('portfolioRefreshKey', () => 0)
-const { authHeaders } = useAuth()
-const { data: summary, refresh } = await useFetch('/api/stockholdings/summary', {
-  key: 'dashboard-summary',
-  headers: authHeaders,
-  watch: [authHeaders],
-})
+const { data: summary, refresh } = await useAuthFetch('/api/stockholdings/summary', { key: 'dashboard-summary' })
 
 watch(refreshKey, () => refresh())
 
@@ -20,22 +15,27 @@ const statCards = computed(() => {
   const profit = s?.totalProfit ?? 0
   return [
     {
-      label: '持股檔數', value: items.value.length,
-      icon: icon('M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z'),
+      label: '總資產', value: s ? '' + (Number(s.totalValue) + Number(s.cashAmount ?? 0)).toLocaleString() : '—',
+      icon: icon('M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3'),
       iconBg: 'bg-indigo-50', iconColor: 'text-indigo-600', badge: null, badgeClass: '',
     },
     {
-      label: '總成本', value: s ? 'NT$ ' + Number(s.totalCost).toLocaleString() : '—',
-      icon: icon('M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z'),
-      iconBg: 'bg-blue-50', iconColor: 'text-blue-600', badge: null, badgeClass: '',
+      label: '現金部位', value: s ? '' + Number(s.cashAmount ?? 0).toLocaleString() : '—',
+      icon: icon('M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z'),
+      iconBg: 'bg-emerald-50', iconColor: 'text-emerald-600', badge: null, badgeClass: '',
     },
     {
-      label: '總市值', value: s ? 'NT$ ' + Number(s.totalValue).toLocaleString() : '—',
+      label: '總市值', value: s ? '' + Number(s.totalValue).toLocaleString() : '—',
       icon: icon('M13 7h8m0 0v8m0-8l-8 8-4-4-6 6'),
       iconBg: 'bg-green-50', iconColor: 'text-green-600', badge: null, badgeClass: '',
     },
     {
-      label: '總損益', value: s ? (profit >= 0 ? '+' : '') + 'NT$ ' + Number(profit).toLocaleString() : '—',
+      label: '總成本', value: s ? '' + Number(s.totalCost).toLocaleString() : '—',
+      icon: icon('M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z'),
+      iconBg: 'bg-blue-50', iconColor: 'text-blue-600', badge: null, badgeClass: '',
+    },
+    {
+      label: '總損益', value: s ? (profit >= 0 ? '+' : '') + Number(profit).toLocaleString() : '—',
       badge: s ? (s.totalProfitPct >= 0 ? '+' : '') + s.totalProfitPct + '%' : null,
       badgeClass: profit >= 0 ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-700',
       icon: icon('M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10'),
@@ -76,7 +76,7 @@ function pct(h: any) {
 
 <template>
   <div class="space-y-6">
-    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
       <div v-for="card in statCards" :key="card.label"
         class="bg-white rounded-xl p-5 border border-slate-200">
         <div class="flex items-start justify-between mb-4">
@@ -87,7 +87,7 @@ function pct(h: any) {
             {{ card.badge }}
           </span>
         </div>
-        <p class="text-2xl font-bold text-slate-800">{{ card.value }}</p>
+        <p class="text-xl font-bold text-slate-800 truncate">{{ card.value }}</p>
         <p class="text-xs text-slate-400 mt-0.5">{{ card.label }}</p>
       </div>
     </div>

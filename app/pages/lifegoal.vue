@@ -1,7 +1,7 @@
 <script setup lang="ts">
 const { authHeaders } = useAuth()
-const { data: projection, refresh: refreshProjection } = await useFetch<any>('/api/portfolio/life-projection', { key: 'life-projection', headers: authHeaders })
-const { data: settings } = await useFetch<any>('/api/portfolio/settings', { key: 'life-settings', headers: authHeaders })
+const { data: projection, refresh: refreshProjection } = await useAuthFetch<any>('/api/portfolio/life-projection', { key: 'life-projection' })
+const { data: settings } = await useAuthFetch<any>('/api/portfolio/settings', { key: 'life-settings' })
 
 const form = ref<Record<string, any>>({})
 const saving = ref(false)
@@ -26,7 +26,7 @@ async function save() {
   try {
     await $fetch('/api/portfolio/settings', {
       method: 'PUT',
-      headers: authHeaders.value,
+      headers: authHeaders.value as HeadersInit,
       body: {
         startInvestYear: Number(form.value.startInvestYear),
         initialAge: Number(form.value.initialAge),
@@ -77,7 +77,7 @@ const milestones = computed(() => {
   <div class="space-y-5">
     <div class="bg-white rounded-xl border border-slate-200 p-5">
       <h3 class="text-sm font-semibold text-slate-800 mb-4">投資參數設定</h3>
-      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div>
           <label class="block text-xs font-medium text-slate-600 mb-1.5">開始投資年（西元）</label>
           <input v-model="form.startInvestYear" type="number"
@@ -123,7 +123,7 @@ const milestones = computed(() => {
     </div>
 
     <div v-if="projection">
-      <div class="grid grid-cols-3 lg:grid-cols-6 gap-3 mb-5">
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-5">
         <div v-for="m in milestones" :key="m.target"
           class="bg-white rounded-xl p-4 border border-slate-200 text-center">
           <p class="text-xs text-slate-400 mb-1">達到 {{ money(m.target) }}</p>
