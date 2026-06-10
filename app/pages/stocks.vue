@@ -88,7 +88,7 @@ async function refreshPrices() {
 
 <template>
   <div class="space-y-5">
-    <div v-if="s" class="grid grid-cols-3 gap-3">
+    <div v-if="s" class="grid grid-cols-2 sm:grid-cols-4 gap-3">
       <div class="bg-white rounded-xl p-3 sm:p-5 border border-slate-200">
         <p class="text-xs text-slate-400 mb-1">總成本</p>
         <p class="text-sm sm:text-xl font-bold text-slate-800 truncate">{{ money(s.totalCost) }}</p>
@@ -99,12 +99,20 @@ async function refreshPrices() {
       </div>
       <div class="bg-white rounded-xl p-3 sm:p-5 border border-slate-200"
         :class="s.totalProfit >= 0 ? 'border-l-4 border-l-red-400' : 'border-l-4 border-l-green-500'">
-        <p class="text-xs text-slate-400 mb-1">總損益</p>
+        <p class="text-xs text-slate-400 mb-1">未實現損益</p>
         <p class="text-sm sm:text-xl font-bold truncate" :class="s.totalProfit >= 0 ? 'text-red-500' : 'text-green-600'">
           {{ s.totalProfit >= 0 ? '+' : '' }}{{ money(s.totalProfit) }}
         </p>
         <p class="text-xs font-medium mt-0.5" :class="s.totalProfit >= 0 ? 'text-red-400' : 'text-green-500'">
           {{ s.totalProfitPct >= 0 ? '+' : '' }}{{ s.totalProfitPct }}%
+        </p>
+      </div>
+      <div class="bg-white rounded-xl p-3 sm:p-5 border border-slate-200"
+        :class="(s.totalRealizedProfit ?? 0) >= 0 ? 'border-l-4 border-l-red-300' : 'border-l-4 border-l-green-400'">
+        <p class="text-xs text-slate-400 mb-1">實現損益</p>
+        <p class="text-sm sm:text-xl font-bold truncate"
+          :class="(s.totalRealizedProfit ?? 0) >= 0 ? 'text-red-500' : 'text-green-600'">
+          {{ (s.totalRealizedProfit ?? 0) >= 0 ? '+' : '' }}{{ money(s.totalRealizedProfit ?? 0) }}
         </p>
       </div>
     </div>
@@ -221,29 +229,39 @@ async function refreshPrices() {
                   {{ h.leverageMultiplier === 0 ? '類現金' : h.leverageMultiplier + 'x' }}
                 </span>
               </td>
-              <td class="px-4 py-3.5 text-right text-slate-700">{{ h.shares.toLocaleString() }}</td>
-              <td class="px-4 py-3.5 text-right text-slate-700">{{ h.averageCost.toLocaleString() }}</td>
-              <td class="px-4 py-3.5 text-right">
-                <span v-if="h.currentPrice" class="font-medium text-slate-800">{{ h.currentPrice.toLocaleString() }}</span>
-                <span v-else class="text-slate-300">—</span>
+              <td class="px-4 py-3.5 text-right"
+                :class="h.shares < 0 ? 'text-green-600 font-medium' : 'text-slate-700'">
+                {{ Math.abs(h.shares).toLocaleString() }}{{ h.shares < 0 ? ' (賣)' : '' }}
               </td>
-              <td class="px-4 py-3.5 text-right text-slate-600">{{ money(h.cost) }}</td>
-              <td class="px-4 py-3.5 text-right">
-                <span v-if="h.value" class="font-medium text-slate-800">{{ money(h.value) }}</span>
-                <span v-else class="text-slate-300">—</span>
+              <!-- 均成本：賣出行顯示當時 WACC，買入行顯示買入均價 -->
+              <td class="px-4 py-3.5 text-right text-slate-700">
+                {{ h.shares < 0 ? (h.costBasis ?? h.averageCost).toLocaleString() : h.averageCost.toLocaleString() }}
               </td>
+              <!-- 現價：賣出行顯示賣出價 -->
+              <td class="px-4 py-3.5 text-right">
+                <span class="font-medium text-slate-800">
+                  {{ h.shares < 0 ? h.averageCost.toLocaleString() : (h.currentPrice ? h.currentPrice.toLocaleString() : '—') }}
+                </span>
+              </td>
+              <!-- 成本總額：賣出行顯示成本基礎金額 -->
+              <td class="px-4 py-3.5 text-right text-slate-600">
+                {{ h.shares < 0 ? money(Math.round((h.costBasis ?? h.averageCost) * Math.abs(h.shares))) : money(h.cost) }}
+              </td>
+              <!-- 市值：賣出行 = 賣出價 × 股數 -->
+              <td class="px-4 py-3.5 text-right font-medium text-slate-800">
+                {{ h.shares < 0 ? money(Math.round(h.averageCost * Math.abs(h.shares))) : (h.value ? money(h.value) : '—') }}
+              </td>
+              <!-- 損益 -->
               <td class="px-4 py-3.5 text-right font-semibold"
                 :class="h.profit > 0 ? 'text-red-500' : h.profit < 0 ? 'text-green-600' : 'text-slate-400'">
-                <span v-if="h.value">{{ h.profit > 0 ? '+' : '' }}{{ money(h.profit) }}</span>
-                <span v-else class="text-slate-300">—</span>
+                {{ h.profit > 0 ? '+' : '' }}{{ money(h.profit) }}
               </td>
+              <!-- 損益% -->
               <td class="px-4 py-3.5 text-right">
-                <span v-if="h.value"
-                  class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
                   :class="h.profitPct > 0 ? 'bg-red-50 text-red-600' : h.profitPct < 0 ? 'bg-green-50 text-green-700' : 'bg-slate-100 text-slate-500'">
                   {{ h.profitPct > 0 ? '+' : '' }}{{ h.profitPct }}%
                 </span>
-                <span v-else class="text-slate-300">—</span>
               </td>
               <td class="px-4 py-3.5 text-slate-500 text-xs">{{ h.buyDate }}</td>
               <td class="px-4 py-3.5">

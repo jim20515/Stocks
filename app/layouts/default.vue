@@ -83,7 +83,7 @@ const editingId = ref<number | null>(null)
 const lookingUp = ref(false)
 const lookupError = ref('')
 
-const form = ref({ stockCode: '', stockName: '', shares: '', averageCost: '', buyDate: today(), leverageMultiplier: 1, watermarkPrice: '', tradeType: 'buy' as 'buy' | 'sell' })
+const form = ref({ stockCode: '', stockName: '', shares: '', averageCost: '', costBasis: '', buyDate: today(), leverageMultiplier: 1, watermarkPrice: '', tradeType: 'buy' as 'buy' | 'sell' })
 
 const refreshKey = useState('portfolioRefreshKey', () => 0)
 
@@ -140,15 +140,17 @@ async function onCodeBlur() {
     const data = await ($authFetch as any)<any>(`/api/stockholdings/lookup/${code}`)
     form.value.stockName = data.name
     if (form.value.tradeType === 'sell') {
-      // 賣出：帶入加權均成本
+      // 賣出：averageCost 存賣出價（市價）；costBasis 另外查 WACC 顯示參考
+      if (data.price) form.value.averageCost = data.price
       const summary = await ($authFetch as any)<any>('/api/stockholdings/summary')
       const holdings: any[] = summary?.items ?? []
       const buyLots = holdings.filter((h: any) => h.stockCode.toUpperCase() === code.toUpperCase() && h.shares > 0)
       const totalShares = buyLots.reduce((s: number, h: any) => s + h.shares, 0)
       const totalCost = buyLots.reduce((s: number, h: any) => s + h.averageCost * h.shares, 0)
-      form.value.averageCost = totalShares > 0 ? String(Math.round(totalCost / totalShares * 100) / 100) : ''
+      form.value.costBasis = totalShares > 0 ? String(Math.round(totalCost / totalShares * 100) / 100) : ''
     } else {
       if (data.price) form.value.averageCost = data.price
+      form.value.costBasis = ''
     }
   } catch {
     lookupError.value = '查無此代號'
@@ -324,18 +326,16 @@ async function submitForm() {
               </div>
               <div>
                 <label class="block text-xs font-medium text-slate-600 mb-1.5">
-                  平均成本（每股）
-                  <span v-if="form.tradeType === 'sell'" class="ml-1 font-normal text-green-500">← 均成本自動帶入</span>
+                  {{ form.tradeType === 'sell' ? '賣出價格（每股）' : '平均成本（每股）' }}
+                  <span v-if="form.tradeType === 'sell' && form.costBasis" class="ml-1 font-normal text-slate-400">均成本 {{ Number(form.costBasis).toLocaleString('zh-TW') }}</span>
                   <span v-else-if="form.averageCost && !editingId" class="ml-1 font-normal text-indigo-400">← 已帶入現價</span>
                 </label>
                 <input
                   :value="form.averageCost !== '' ? Number(form.averageCost).toLocaleString('zh-TW') : ''"
                   type="text" inputmode="decimal" placeholder="輸入代號後自動帶入"
-                  :readonly="form.tradeType === 'sell'"
-                  @focus="(e: any) => { if (form.tradeType !== 'sell') e.target.value = String(form.averageCost).replace(/,/g, '') }"
-                  @blur="(e: any) => { if (form.tradeType !== 'sell') { const n = parseFloat(e.target.value.replace(/,/g,'')); if (!isNaN(n)) form.averageCost = String(n) } }"
-                  @input="(e: any) => { if (form.tradeType !== 'sell') form.averageCost = e.target.value.replace(/,/g, '') }"
-                  :class="form.tradeType === 'sell' ? 'bg-slate-50 text-slate-400 cursor-not-allowed' : ''"
+                  @focus="(e: any) => { e.target.value = String(form.averageCost).replace(/,/g, '') }"
+                  @blur="(e: any) => { const n = parseFloat(e.target.value.replace(/,/g,'')); if (!isNaN(n)) form.averageCost = String(n) }"
+                  @input="(e: any) => { form.averageCost = e.target.value.replace(/,/g, '') }"
                   class="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300" />
               </div>
             </div>

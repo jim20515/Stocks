@@ -360,6 +360,7 @@ function goPage(p: number) {
               </td>
               <td class="px-4 py-3.5 text-right text-slate-400">—</td>
               <td class="px-4 py-3.5 text-right text-slate-400">—</td>
+              <td class="px-4 py-3.5 text-right text-slate-400"></td>
               <td class="px-4 py-3.5 text-right font-medium text-slate-800">{{ money(d.cash.amount) }}</td>
               <td class="px-4 py-3.5 text-right text-slate-600">{{ pct(d.cash.allocation) }}</td>
               <td class="px-4 py-3.5 text-right font-mono font-semibold text-slate-400">0x</td>
@@ -367,7 +368,7 @@ function goPage(p: number) {
             </tr>
             <tr class="bg-indigo-50 font-semibold">
               <td class="px-5 py-3 text-slate-700">合計</td>
-              <td></td><td></td><td></td>
+              <td></td><td></td><td></td><td></td>
               <td class="px-4 py-3 text-right text-slate-800">{{ money(d.totalValue) }}</td>
               <td class="px-4 py-3 text-right text-slate-600">100%</td>
               <td></td>
