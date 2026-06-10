@@ -1,6 +1,6 @@
 <script setup lang="ts">
 const route = useRoute()
-const emit = defineEmits(['add', 'logout'])
+const emit = defineEmits(['add', 'import', 'logout'])
 const { user } = useAuth()
 
 const titleMap: Record<string, string> = {
@@ -24,16 +24,26 @@ const today = computed(() =>
       <p class="text-xs text-slate-400">{{ today }}</p>
     </div>
     <div class="flex items-center gap-3">
-      <button
-        v-if="route.path === '/stocks'"
-        @click="emit('add')"
-        class="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"
-      >
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-        </svg>
-        新增持股
-      </button>
+      <template v-if="route.path === '/stocks'">
+        <button
+          @click="emit('import')"
+          class="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-600 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+          </svg>
+          匯入 XLS
+        </button>
+        <button
+          @click="emit('add')"
+          class="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+          </svg>
+          新增持股
+        </button>
+      </template>
       <div class="flex items-center gap-2 border-l border-slate-200 pl-3">
         <span class="text-xs text-slate-400 hidden sm:block">{{ user?.email }}</span>
         <button @click="emit('logout')"

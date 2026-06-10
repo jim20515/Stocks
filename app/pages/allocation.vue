@@ -68,6 +68,67 @@ function diffClass(actual: number, target: number) {
 function barClass(actual: number, target: number) {
   return actual >= target ? 'bg-green-400' : 'bg-red-400'
 }
+
+// 依股票代號加總
+const aggregatedItems = computed(() => {
+  const items: any[] = d.value?.items ?? []
+  const totalValue = d.value?.totalValue ?? 1
+  const map: Record<string, any> = {}
+  for (const h of items) {
+    if (!map[h.stockCode]) {
+      map[h.stockCode] = { ...h, shares: 0, marketValue: 0 }
+    }
+    map[h.stockCode].shares += h.shares
+    map[h.stockCode].marketValue += h.marketValue
+  }
+  return Object.values(map).filter(h => h.shares > 0).map(h => ({
+    ...h,
+    shares: h.shares,
+    marketValue: Math.round(h.marketValue),
+    allocation: totalValue > 0 ? h.marketValue / totalValue : 0,
+    betaContrib: totalValue > 0 ? (h.marketValue / totalValue) * h.leverageMultiplier : 0,
+  }))
+})
+
+// 排序
+const sortKey = ref<string>('')
+const sortDir = ref<'asc' | 'desc'>('asc')
+
+function toggleSort(key: string) {
+  if (sortKey.value === key) {
+    sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    sortKey.value = key
+    sortDir.value = 'asc'
+  }
+  currentPage.value = 1
+}
+
+const sortedItems = computed(() => {
+  if (!sortKey.value) return aggregatedItems.value
+  return [...aggregatedItems.value].sort((a, b) => {
+    const av = a[sortKey.value]
+    const bv = b[sortKey.value]
+    if (av == null) return 1
+    if (bv == null) return -1
+    const cmp = typeof av === 'string' ? av.localeCompare(bv, 'zh-TW') : av - bv
+    return sortDir.value === 'asc' ? cmp : -cmp
+  })
+})
+
+// 分頁
+const pageSize = 10
+const currentPage = ref(1)
+const totalPages = computed(() => Math.ceil(sortedItems.value.length / pageSize))
+const pagedItems = computed(() => {
+  const start = (currentPage.value - 1) * pageSize
+  return sortedItems.value.slice(start, start + pageSize)
+})
+
+function goPage(p: number) {
+  if (p < 1 || p > totalPages.value) return
+  currentPage.value = p
+}
 </script>
 
 <template>
@@ -187,10 +248,10 @@ function barClass(actual: number, target: number) {
       </table>
     </div>
 
-    <!-- 持股配置明細 -->
+    <!-- 資產配置統計 -->
     <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
       <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-        <h3 class="text-sm font-semibold text-slate-800">資產配置明細</h3>
+        <h3 class="text-sm font-semibold text-slate-800">資產配置統計</h3>
         <p class="text-xs text-slate-400">Beta = 持股佔比 × 槓桿倍數</p>
       </div>
 
@@ -199,18 +260,32 @@ function barClass(actual: number, target: number) {
         <table class="w-full text-sm">
           <thead>
             <tr class="bg-slate-50 border-b border-slate-100">
-              <th class="text-left px-5 py-3 text-xs font-medium text-slate-500">代號 / 名稱</th>
-              <th class="text-center px-4 py-3 text-xs font-medium text-slate-500">類型</th>
-              <th class="text-right px-4 py-3 text-xs font-medium text-slate-500">股數</th>
-              <th class="text-right px-4 py-3 text-xs font-medium text-slate-500">現價</th>
-              <th class="text-right px-4 py-3 text-xs font-medium text-slate-500">市值</th>
-              <th class="text-right px-4 py-3 text-xs font-medium text-slate-500">佔比</th>
+              <th class="text-left px-5 py-3 text-xs font-medium text-slate-500 cursor-pointer select-none hover:text-indigo-600" @click="toggleSort('stockCode')">
+                代號 / 名稱 <span class="ml-1 opacity-50">{{ sortKey === 'stockCode' ? (sortDir === 'asc' ? '↑' : '↓') : '↕' }}</span>
+              </th>
+              <th class="text-center px-4 py-3 text-xs font-medium text-slate-500 cursor-pointer select-none hover:text-indigo-600" @click="toggleSort('leverageMultiplier')">
+                類型 <span class="ml-1 opacity-50">{{ sortKey === 'leverageMultiplier' ? (sortDir === 'asc' ? '↑' : '↓') : '↕' }}</span>
+              </th>
+              <th class="text-right px-4 py-3 text-xs font-medium text-slate-500 cursor-pointer select-none hover:text-indigo-600" @click="toggleSort('shares')">
+                股數 <span class="ml-1 opacity-50">{{ sortKey === 'shares' ? (sortDir === 'asc' ? '↑' : '↓') : '↕' }}</span>
+              </th>
+              <th class="text-right px-4 py-3 text-xs font-medium text-slate-500 cursor-pointer select-none hover:text-indigo-600" @click="toggleSort('currentPrice')">
+                現價 <span class="ml-1 opacity-50">{{ sortKey === 'currentPrice' ? (sortDir === 'asc' ? '↑' : '↓') : '↕' }}</span>
+              </th>
+              <th class="text-right px-4 py-3 text-xs font-medium text-slate-500 cursor-pointer select-none hover:text-indigo-600" @click="toggleSort('marketValue')">
+                市值 <span class="ml-1 opacity-50">{{ sortKey === 'marketValue' ? (sortDir === 'asc' ? '↑' : '↓') : '↕' }}</span>
+              </th>
+              <th class="text-right px-4 py-3 text-xs font-medium text-slate-500 cursor-pointer select-none hover:text-indigo-600" @click="toggleSort('allocation')">
+                佔比 <span class="ml-1 opacity-50">{{ sortKey === 'allocation' ? (sortDir === 'asc' ? '↑' : '↓') : '↕' }}</span>
+              </th>
               <th class="text-right px-4 py-3 text-xs font-medium text-slate-500">槓桿</th>
-              <th class="text-right px-4 py-3 text-xs font-medium text-slate-500">Beta 貢獻</th>
+              <th class="text-right px-4 py-3 text-xs font-medium text-slate-500 cursor-pointer select-none hover:text-indigo-600" @click="toggleSort('betaContrib')">
+                Beta 貢獻 <span class="ml-1 opacity-50">{{ sortKey === 'betaContrib' ? (sortDir === 'asc' ? '↑' : '↓') : '↕' }}</span>
+              </th>
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-50">
-            <tr v-for="h in d.items" :key="h.id" class="hover:bg-slate-50/50 transition">
+            <tr v-for="h in pagedItems" :key="h.stockCode" class="hover:bg-slate-50/50 transition">
               <td class="px-5 py-3.5">
                 <div class="flex items-center gap-3">
                   <div class="w-8 h-8 rounded-full bg-indigo-50 flex items-center justify-center shrink-0">
@@ -273,6 +348,32 @@ function barClass(actual: number, target: number) {
             </tr>
           </tbody>
         </table>
+      </div>
+
+      <!-- 分頁 -->
+      <div v-if="totalPages > 1" class="flex items-center justify-between px-5 py-3 border-t border-slate-100">
+        <p class="text-xs text-slate-400">
+          共 {{ aggregatedItems.length }} 支股票，第 {{ currentPage }} / {{ totalPages }} 頁
+        </p>
+        <div class="flex items-center gap-1">
+          <button @click="goPage(1)" :disabled="currentPage === 1"
+            class="px-2 py-1 text-xs rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition">«</button>
+          <button @click="goPage(currentPage - 1)" :disabled="currentPage === 1"
+            class="px-2 py-1 text-xs rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition">‹</button>
+          <template v-for="p in totalPages" :key="p">
+            <button v-if="Math.abs(p - currentPage) <= 2 || p === 1 || p === totalPages"
+              @click="goPage(p)"
+              class="px-3 py-1 text-xs rounded-lg transition font-medium"
+              :class="p === currentPage ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-100'">
+              {{ p }}
+            </button>
+            <span v-else-if="Math.abs(p - currentPage) === 3" class="px-1 text-slate-300 text-xs">…</span>
+          </template>
+          <button @click="goPage(currentPage + 1)" :disabled="currentPage === totalPages"
+            class="px-2 py-1 text-xs rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition">›</button>
+          <button @click="goPage(totalPages)" :disabled="currentPage === totalPages"
+            class="px-2 py-1 text-xs rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition">»</button>
+        </div>
       </div>
     </div>
   </div>

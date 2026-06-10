@@ -7,8 +7,48 @@ const { data: summary, refresh } = await useFetch('/api/stockholdings/summary', 
 
 watch(refreshKey, () => refresh())
 
-const items = computed(() => (summary.value as any)?.items ?? [])
+const allItems = computed(() => (summary.value as any)?.items ?? [])
 const s = computed(() => summary.value as any)
+
+// 排序
+const sortKey = ref<string>('')
+const sortDir = ref<'asc' | 'desc'>('asc')
+
+function toggleSort(key: string) {
+  if (sortKey.value === key) {
+    sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    sortKey.value = key
+    sortDir.value = 'asc'
+  }
+  currentPage.value = 1
+}
+
+const sortedItems = computed(() => {
+  if (!sortKey.value) return allItems.value
+  return [...allItems.value].sort((a, b) => {
+    const av = a[sortKey.value]
+    const bv = b[sortKey.value]
+    if (av == null) return 1
+    if (bv == null) return -1
+    const cmp = typeof av === 'string' ? av.localeCompare(bv, 'zh-TW') : av - bv
+    return sortDir.value === 'asc' ? cmp : -cmp
+  })
+})
+
+// 分頁
+const pageSize = 10
+const currentPage = ref(1)
+const totalPages = computed(() => Math.ceil(sortedItems.value.length / pageSize))
+const items = computed(() => {
+  const start = (currentPage.value - 1) * pageSize
+  return sortedItems.value.slice(start, start + pageSize)
+})
+
+function goPage(p: number) {
+  if (p < 1 || p > totalPages.value) return
+  currentPage.value = p
+}
 
 async function remove(id: number, name: string) {
   if (!confirm(`確定刪除「${name}」？`)) return
@@ -46,23 +86,53 @@ function money(v: any) { return Number(v).toLocaleString('zh-TW') }
         <p class="text-xs text-slate-400">股價來源：{{ s?.priceDate || '—' }}</p>
       </div>
 
-      <div v-if="!items.length" class="py-12 text-center text-sm text-slate-400">
+      <div v-if="!allItems.length" class="py-12 text-center text-sm text-slate-400">
         尚無持股，點右上角「新增持股」開始記錄
       </div>
-      <div v-else class="overflow-x-auto">
+      <div v-else class="overflow-x-auto" >
         <table class="w-full text-sm">
           <thead>
             <tr class="bg-slate-50 border-b border-slate-100">
-              <th class="text-left px-5 py-3 text-xs font-medium text-slate-500">代號 / 名稱</th>
-              <th class="text-center px-4 py-3 text-xs font-medium text-slate-500">類型</th>
-              <th class="text-right px-4 py-3 text-xs font-medium text-slate-500">持有股數</th>
-              <th class="text-right px-4 py-3 text-xs font-medium text-slate-500">均成本</th>
-              <th class="text-right px-4 py-3 text-xs font-medium text-slate-500">現價</th>
-              <th class="text-right px-4 py-3 text-xs font-medium text-slate-500">成本總額</th>
-              <th class="text-right px-4 py-3 text-xs font-medium text-slate-500">市值</th>
-              <th class="text-right px-4 py-3 text-xs font-medium text-slate-500">損益</th>
-              <th class="text-right px-4 py-3 text-xs font-medium text-slate-500">損益%</th>
-              <th class="text-left px-4 py-3 text-xs font-medium text-slate-500">買入日</th>
+              <th class="text-left px-5 py-3 text-xs font-medium text-slate-500 cursor-pointer select-none hover:text-indigo-600" @click="toggleSort('stockCode')">
+                代號 / 名稱
+                <span class="ml-1 opacity-50">{{ sortKey === 'stockCode' ? (sortDir === 'asc' ? '↑' : '↓') : '↕' }}</span>
+              </th>
+              <th class="text-center px-4 py-3 text-xs font-medium text-slate-500 cursor-pointer select-none hover:text-indigo-600" @click="toggleSort('leverageMultiplier')">
+                類型
+                <span class="ml-1 opacity-50">{{ sortKey === 'leverageMultiplier' ? (sortDir === 'asc' ? '↑' : '↓') : '↕' }}</span>
+              </th>
+              <th class="text-right px-4 py-3 text-xs font-medium text-slate-500 cursor-pointer select-none hover:text-indigo-600" @click="toggleSort('shares')">
+                持有股數
+                <span class="ml-1 opacity-50">{{ sortKey === 'shares' ? (sortDir === 'asc' ? '↑' : '↓') : '↕' }}</span>
+              </th>
+              <th class="text-right px-4 py-3 text-xs font-medium text-slate-500 cursor-pointer select-none hover:text-indigo-600" @click="toggleSort('averageCost')">
+                均成本
+                <span class="ml-1 opacity-50">{{ sortKey === 'averageCost' ? (sortDir === 'asc' ? '↑' : '↓') : '↕' }}</span>
+              </th>
+              <th class="text-right px-4 py-3 text-xs font-medium text-slate-500 cursor-pointer select-none hover:text-indigo-600" @click="toggleSort('currentPrice')">
+                現價
+                <span class="ml-1 opacity-50">{{ sortKey === 'currentPrice' ? (sortDir === 'asc' ? '↑' : '↓') : '↕' }}</span>
+              </th>
+              <th class="text-right px-4 py-3 text-xs font-medium text-slate-500 cursor-pointer select-none hover:text-indigo-600" @click="toggleSort('cost')">
+                成本總額
+                <span class="ml-1 opacity-50">{{ sortKey === 'cost' ? (sortDir === 'asc' ? '↑' : '↓') : '↕' }}</span>
+              </th>
+              <th class="text-right px-4 py-3 text-xs font-medium text-slate-500 cursor-pointer select-none hover:text-indigo-600" @click="toggleSort('value')">
+                市值
+                <span class="ml-1 opacity-50">{{ sortKey === 'value' ? (sortDir === 'asc' ? '↑' : '↓') : '↕' }}</span>
+              </th>
+              <th class="text-right px-4 py-3 text-xs font-medium text-slate-500 cursor-pointer select-none hover:text-indigo-600" @click="toggleSort('profit')">
+                損益
+                <span class="ml-1 opacity-50">{{ sortKey === 'profit' ? (sortDir === 'asc' ? '↑' : '↓') : '↕' }}</span>
+              </th>
+              <th class="text-right px-4 py-3 text-xs font-medium text-slate-500 cursor-pointer select-none hover:text-indigo-600" @click="toggleSort('profitPct')">
+                損益%
+                <span class="ml-1 opacity-50">{{ sortKey === 'profitPct' ? (sortDir === 'asc' ? '↑' : '↓') : '↕' }}</span>
+              </th>
+              <th class="text-left px-4 py-3 text-xs font-medium text-slate-500 cursor-pointer select-none hover:text-indigo-600" @click="toggleSort('buyDate')">
+                買入日
+                <span class="ml-1 opacity-50">{{ sortKey === 'buyDate' ? (sortDir === 'asc' ? '↑' : '↓') : '↕' }}</span>
+              </th>
               <th class="px-4 py-3"></th>
             </tr>
           </thead>
@@ -138,6 +208,40 @@ function money(v: any) { return Number(v).toLocaleString('zh-TW') }
 
           </tbody>
         </table>
+      </div>
+
+      <!-- 分頁 -->
+      <div v-if="totalPages > 1" class="flex items-center justify-between px-5 py-3 border-t border-slate-100">
+        <p class="text-xs text-slate-400">
+          共 {{ allItems.length }} 筆，第 {{ currentPage }} / {{ totalPages }} 頁
+        </p>
+        <div class="flex items-center gap-1">
+          <button @click="goPage(1)" :disabled="currentPage === 1"
+            class="px-2 py-1 text-xs rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition">
+            «
+          </button>
+          <button @click="goPage(currentPage - 1)" :disabled="currentPage === 1"
+            class="px-2 py-1 text-xs rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition">
+            ‹
+          </button>
+          <template v-for="p in totalPages" :key="p">
+            <button v-if="Math.abs(p - currentPage) <= 2 || p === 1 || p === totalPages"
+              @click="goPage(p)"
+              class="px-3 py-1 text-xs rounded-lg transition font-medium"
+              :class="p === currentPage ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-100'">
+              {{ p }}
+            </button>
+            <span v-else-if="Math.abs(p - currentPage) === 3" class="px-1 text-slate-300 text-xs">…</span>
+          </template>
+          <button @click="goPage(currentPage + 1)" :disabled="currentPage === totalPages"
+            class="px-2 py-1 text-xs rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition">
+            ›
+          </button>
+          <button @click="goPage(totalPages)" :disabled="currentPage === totalPages"
+            class="px-2 py-1 text-xs rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition">
+            »
+          </button>
+        </div>
       </div>
     </div>
   </div>

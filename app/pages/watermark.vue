@@ -1,7 +1,18 @@
 <script setup lang="ts">
 const { authHeaders } = useAuth()
-const { data: holdings } = await useFetch<any[]>('/api/stockholdings', { headers: authHeaders })
-const selected = ref(holdings.value?.[0]?.stock_code ?? '')
+const { data: summary } = await useFetch<any>('/api/portfolio/beta-summary', { headers: authHeaders })
+
+// 依 stockCode 去重，取唯一持股清單
+const holdings = computed(() => {
+  const seen = new Set<string>()
+  return (summary.value?.items ?? []).filter((h: any) => {
+    if (seen.has(h.stockCode)) return false
+    seen.add(h.stockCode)
+    return true
+  })
+})
+
+const selected = ref(holdings.value?.[0]?.stockCode ?? '')
 const result = ref<any>(null)
 const loading = ref(false)
 
@@ -32,8 +43,8 @@ if (selected.value) await loadWatermark()
           <label class="block text-xs font-medium text-slate-600 mb-1.5">選擇持股</label>
           <select v-model="selected" @change="loadWatermark"
             class="px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white min-w-40">
-            <option v-for="h in holdings" :key="h.id" :value="h.stock_code">
-              {{ h.stock_code }} {{ h.stock_name }}
+            <option v-for="h in holdings" :key="h.stockCode" :value="h.stockCode">
+              {{ h.stockCode }} {{ h.stockName }}
             </option>
           </select>
         </div>

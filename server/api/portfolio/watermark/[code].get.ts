@@ -27,13 +27,14 @@ export default defineEventHandler(async (event) => {
   const code = getRouterParam(event, 'code')?.trim().toUpperCase()
   if (!code) throw createError({ statusCode: 400, message: '請提供股票代號' })
 
-  const { data: holding, error } = await client
+  const { data: holdings, error } = await client
     .from('stock_holdings')
     .select('*')
     .eq('stock_code', code)
     .eq('user_id', userId)
-    .single()
+    .limit(1)
 
+  const holding = holdings?.[0]
   if (error || !holding) throw createError({ statusCode: 404, message: '找不到此持股' })
 
   const [prices, ath] = await Promise.all([

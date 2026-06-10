@@ -16,7 +16,7 @@ const statCards = computed(() => {
   const profit = s?.totalProfit ?? 0
   return [
     {
-      label: '持股檔數', value: s?.items?.length ?? 0,
+      label: '持股檔數', value: items.value.length,
       icon: icon('M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z'),
       iconBg: 'bg-indigo-50', iconColor: 'text-indigo-600', badge: null, badgeClass: '',
     },
@@ -41,7 +41,27 @@ const statCards = computed(() => {
   ]
 })
 
-const items = computed(() => (summary.value as any)?.items ?? [])
+const allItems = computed(() => (summary.value as any)?.items ?? [])
+
+// 依股票代號加總
+const items = computed(() => {
+  const map: Record<string, any> = {}
+  for (const h of allItems.value) {
+    if (!map[h.stockCode]) {
+      map[h.stockCode] = { ...h, shares: 0, cost: 0, value: 0, profit: 0 }
+    }
+    map[h.stockCode].shares += h.shares
+    map[h.stockCode].cost += h.cost
+    map[h.stockCode].value += h.value
+    map[h.stockCode].profit += h.profit
+  }
+  return Object.values(map)
+    .filter(h => h.shares > 0)
+    .map(h => ({
+      ...h,
+      profitPct: h.cost > 0 && h.value > 0 ? Math.round((h.profit / h.cost) * 10000) / 100 : 0,
+    }))
+})
 
 function pct(h: any) {
   const total = items.value.reduce((s: number, i: any) => s + (i.cost || 0), 0)
