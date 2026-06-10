@@ -4,6 +4,9 @@ import { h } from 'vue'
 const route = useRoute()
 const isActive = (path: string) => route.path === path
 
+const props = defineProps<{ open?: boolean }>()
+const emit = defineEmits(['close'])
+
 const icon = (d: string) => () => h('svg', { fill: 'none', stroke: 'currentColor', viewBox: '0 0 24 24' }, [
   h('path', { 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'stroke-width': '2', d })
 ])
@@ -38,7 +41,8 @@ const navItems = [
 </script>
 
 <template>
-  <aside class="fixed left-0 top-0 h-full w-60 bg-white border-r border-slate-200 flex flex-col z-20">
+  <aside class="fixed left-0 top-0 h-full w-60 bg-white border-r border-slate-200 flex flex-col z-40 transition-transform duration-300"
+    :class="props.open ? 'translate-x-0' : '-translate-x-full md:translate-x-0'">
     <div class="px-6 py-5 border-b border-slate-200">
       <div class="flex items-center gap-3">
         <div class="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
@@ -63,6 +67,7 @@ const navItems = [
             :class="isActive(item.path)
               ? 'bg-indigo-50 text-indigo-600'
               : 'text-slate-600 hover:bg-slate-50 hover:text-slate-800'"
+            @click="emit('close')"
           >
             <component :is="item.icon" class="w-5 h-5 shrink-0" />
             {{ item.label }}
