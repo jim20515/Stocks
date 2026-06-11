@@ -3,7 +3,11 @@ const refreshKey = useState('portfolioRefreshKey', () => 0)
 const openEditModal = inject<(h: any) => void>('openEditModal', () => {})
 const { authHeaders } = useAuth()
 
-const { data: summary, refresh } = await useAuthFetch('/api/stockholdings/summary', { key: 'stocks-summary' })
+const priceCacheBust = ref(Date.now())
+const { data: summary, refresh } = await useAuthFetch(
+  computed(() => `/api/stockholdings/summary?_t=${priceCacheBust.value}`),
+  { key: 'stocks-summary' }
+)
 
 watch(refreshKey, () => refresh())
 
@@ -13,11 +17,14 @@ const s = computed(() => summary.value as any)
 // 篩選
 const filterCode = ref('')
 const filterProfitPct = ref<number | ''>('')
+const filterTradeType = ref<'all' | 'buy' | 'sell'>('all')
 
 const filteredItems = computed(() => {
   return allItems.value.filter((h: any) => {
     if (filterCode.value && !h.stockCode.toLowerCase().includes(filterCode.value.toLowerCase()) && !h.stockName.includes(filterCode.value)) return false
     if (filterProfitPct.value !== '' && h.profitPct < Number(filterProfitPct.value)) return false
+    if (filterTradeType.value === 'buy' && h.shares < 0) return false
+    if (filterTradeType.value === 'sell' && h.shares >= 0) return false
     return true
   })
 })
@@ -25,10 +32,11 @@ const filteredItems = computed(() => {
 function clearFilters() {
   filterCode.value = ''
   filterProfitPct.value = ''
+  filterTradeType.value = 'all'
   currentPage.value = 1
 }
 
-const hasFilter = computed(() => filterCode.value || filterProfitPct.value !== '')
+const hasFilter = computed(() => filterCode.value || filterProfitPct.value !== '' || filterTradeType.value !== 'all')
 
 // 排序
 const sortKey = ref<string>('buyDate')
@@ -82,7 +90,12 @@ function money(v: any) { return Number(v).toLocaleString('zh-TW') }
 const refreshing = ref(false)
 async function refreshPrices() {
   refreshing.value = true
-  try { await refresh() } finally { refreshing.value = false }
+  try {
+    priceCacheBust.value = Date.now()
+    await refresh()
+  } finally {
+    refreshing.value = false
+  }
 }
 </script>
 
@@ -133,6 +146,26 @@ async function refreshPrices() {
             <span class="text-sm text-slate-400">%</span>
           </div>
         </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-500 mb-1">交易類型</label>
+          <div class="flex rounded-lg border border-slate-200 overflow-hidden text-xs font-medium">
+            <button @click="filterTradeType = 'all'; currentPage = 1"
+              class="px-3 py-1.5 transition"
+              :class="filterTradeType === 'all' ? 'bg-slate-700 text-white' : 'text-slate-500 hover:bg-slate-50'">
+              全部
+            </button>
+            <button @click="filterTradeType = 'buy'; currentPage = 1"
+              class="px-3 py-1.5 border-l border-slate-200 transition"
+              :class="filterTradeType === 'buy' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'">
+              買進
+            </button>
+            <button @click="filterTradeType = 'sell'; currentPage = 1"
+              class="px-3 py-1.5 border-l border-slate-200 transition"
+              :class="filterTradeType === 'sell' ? 'bg-green-600 text-white' : 'text-slate-500 hover:bg-slate-50'">
+              賣出
+            </button>
+          </div>
+        </div>
         <button v-if="hasFilter" @click="clearFilters"
           class="mt-4 px-3 py-1.5 text-xs font-medium text-slate-500 border border-slate-200 rounded-lg hover:bg-slate-50 transition">
           清除篩選
@@ -177,9 +210,13 @@ async function refreshPrices() {
                 均成本
                 <span class="ml-1 opacity-50">{{ sortKey === 'averageCost' ? (sortDir === 'asc' ? '↑' : '↓') : '↕' }}</span>
               </th>
-              <th class="text-right px-4 py-3 text-xs font-medium text-slate-500 cursor-pointer select-none hover:text-indigo-600" @click="toggleSort('currentPrice')">
+              <th class="text-right px-4 py-3 text-xs font-medium text-indigo-500 cursor-pointer select-none hover:text-indigo-600" @click="toggleSort('currentPrice')">
                 現價
                 <span class="ml-1 opacity-50">{{ sortKey === 'currentPrice' ? (sortDir === 'asc' ? '↑' : '↓') : '↕' }}</span>
+              </th>
+              <th class="text-right px-4 py-3 text-xs font-medium text-green-600 cursor-pointer select-none hover:text-green-700" @click="toggleSort('averageCost')">
+                賣出價
+                <span class="ml-1 opacity-50">{{ sortKey === 'averageCost' ? (sortDir === 'asc' ? '↑' : '↓') : '↕' }}</span>
               </th>
               <th class="text-right px-4 py-3 text-xs font-medium text-slate-500 cursor-pointer select-none hover:text-indigo-600" @click="toggleSort('cost')">
                 成本總額
@@ -237,11 +274,19 @@ async function refreshPrices() {
               <td class="px-4 py-3.5 text-right text-slate-700">
                 {{ h.shares < 0 ? (h.costBasis ?? h.averageCost).toLocaleString() : h.averageCost.toLocaleString() }}
               </td>
-              <!-- 現價：賣出行顯示賣出價 -->
+              <!-- 現價：只有買進才顯示 -->
               <td class="px-4 py-3.5 text-right">
-                <span class="font-medium text-slate-800">
-                  {{ h.shares < 0 ? h.averageCost.toLocaleString() : (h.currentPrice ? h.currentPrice.toLocaleString() : '—') }}
+                <span v-if="h.shares >= 0" class="font-medium text-indigo-700">
+                  {{ h.currentPrice ? h.currentPrice.toLocaleString() : '—' }}
                 </span>
+                <span v-else class="text-slate-300">—</span>
+              </td>
+              <!-- 賣出價：只有賣出才顯示 -->
+              <td class="px-4 py-3.5 text-right">
+                <span v-if="h.shares < 0" class="font-medium text-green-700">
+                  {{ h.averageCost.toLocaleString() }}
+                </span>
+                <span v-else class="text-slate-300">—</span>
               </td>
               <!-- 成本總額：賣出行顯示成本基礎金額 -->
               <td class="px-4 py-3.5 text-right text-slate-600">

@@ -3,18 +3,30 @@ const OTC_QUOTES = 'https://www.tpex.org.tw/openapi/v1/tpex_mainboard_quotes'
 const LISTED_URL = 'https://openapi.twse.com.tw/v1/opendata/t187ap03_L'
 const OTC_URL = 'https://openapi.twse.com.tw/v1/opendata/t187ap03_O'
 
-interface MisItem { c?: string; z?: string; y?: string; n?: string; ch?: string }
+interface MisItem { c?: string; z?: string; y?: string; n?: string; ch?: string; b?: string; a?: string }
 interface MisResp { msgArray?: MisItem[] }
 interface OtcPrice { SecuritiesCompanyCode: string; ClosePrice: string }
 interface CompanyInfo { 公司代號: string; 公司簡稱: string }
 interface TwseDayResp { stat?: string; title?: string; data?: string[][] }
 
 function parseMisPrice(item: MisItem): number | null {
-  for (const v of [item.z, item.y]) {
-    if (v && v !== '-') {
-      const n = parseFloat(v)
-      if (!isNaN(n)) return n
-    }
+  // z = 最新成交價，盤中優先
+  if (item.z && item.z !== '-') {
+    const n = parseFloat(item.z)
+    if (!isNaN(n)) return n
+  }
+  // 盤中無成交時，用委買/委賣均價
+  const bid = item.b ? parseFloat(item.b.split('_')[0]) : NaN
+  const ask = item.a ? parseFloat(item.a.split('_')[0]) : NaN
+  if (!isNaN(bid) && !isNaN(ask) && bid > 0 && ask > 0) {
+    return Math.round((bid + ask) / 2 * 100) / 100
+  }
+  if (!isNaN(bid) && bid > 0) return bid
+  if (!isNaN(ask) && ask > 0) return ask
+  // 最後退回昨收
+  if (item.y && item.y !== '-') {
+    const n = parseFloat(item.y)
+    if (!isNaN(n)) return n
   }
   return null
 }
@@ -77,32 +89,41 @@ export async function lookupStock(code: string): Promise<{ name: string; price: 
   return null
 }
 
+/** Yahoo Finance 批次即時報價 */
+async function fetchYahooPrices(codes: string[]): Promise<Record<string, number>> {
+  const result: Record<string, number> = {}
+  const BATCH = 20
+  for (let i = 0; i < codes.length; i += BATCH) {
+    const batch = codes.slice(i, i + BATCH)
+    const symbols = batch.map(c => `${c}.TW`).join(',')
+    try {
+      const url = `https://query2.finance.yahoo.com/v8/finance/chart/${batch[0]}.TW?interval=1m&range=1d`
+      // 單支直接用 chart API；多支並行
+      await Promise.all(batch.map(async (code) => {
+        try {
+          const data = await $fetch<any>(
+            `https://query2.finance.yahoo.com/v8/finance/chart/${code}.TW?interval=1m&range=1d`,
+            { headers: { 'User-Agent': 'Mozilla/5.0' } }
+          )
+          const price = data?.chart?.result?.[0]?.meta?.regularMarketPrice
+          if (price && price > 0) result[code.toUpperCase()] = price
+        } catch {}
+      }))
+    } catch {}
+  }
+  return result
+}
+
 /** 批次取得多支股票今日股價 */
 export async function fetchPrices(codes: string[]): Promise<Record<string, number>> {
   const result: Record<string, number> = {}
   if (!codes.length) return result
 
-  const BATCH = 50
+  // 1. Yahoo Finance 即時（主要來源）
+  const yahooResult = await fetchYahooPrices(codes)
+  Object.assign(result, yahooResult)
 
-  // 1. MIS 即時（盤中）
-  for (const ex of ['tse', 'otc']) {
-    const remaining = codes.filter(c => !(c.toUpperCase() in result))
-    for (let i = 0; i < remaining.length; i += BATCH) {
-      const batch = remaining.slice(i, i + BATCH)
-      const ex_ch = batch.map(c => `${ex}_${c.toLowerCase()}.tw`).join('|')
-      try {
-        const data = await $fetch<MisResp>(`${MIS_URL}${ex_ch}`)
-        for (const item of data?.msgArray ?? []) {
-          const code = codeFromCh(item.ch)
-          if (!code) continue
-          const price = parseMisPrice(item)
-          if (price !== null) result[code] = price
-        }
-      } catch {}
-    }
-  }
-
-  // 2. MIS 抓不到的 → TWSE 個股月報表（並行，永遠最新）
+  // 2. 抓不到的 → TWSE 個股月報表（收盤備援）
   const missing = codes.filter(c => !(c.toUpperCase() in result))
   if (missing.length) {
     await Promise.all(missing.map(async (code) => {
@@ -111,7 +132,7 @@ export async function fetchPrices(codes: string[]): Promise<Record<string, numbe
     }))
   }
 
-  // 3. 還找不到的 → OTC 盤後（上櫃）
+  // 3. 還找不到的 → OTC 盤後
   const stillMissing = codes.filter(c => !(c.toUpperCase() in result))
   if (stillMissing.length) {
     try {
