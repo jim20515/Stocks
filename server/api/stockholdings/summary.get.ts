@@ -124,6 +124,6 @@ export default defineEventHandler(async (event) => {
     totalProfit: Math.round(totalProfit),
     totalProfitPct,
     totalRealizedProfit: Math.round(totalRealizedProfit),
-    priceDate: new Date().toLocaleString('zh-TW', { hour12: false }),
+    priceDate: new Date().toLocaleString('zh-TW', { hour12: false, timeZone: 'Asia/Taipei' }),
   }
 })
