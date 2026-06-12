@@ -3,11 +3,7 @@ const refreshKey = useState('portfolioRefreshKey', () => 0)
 const openEditModal = inject<(h: any) => void>('openEditModal', () => {})
 const { authHeaders } = useAuth()
 
-const priceCacheBust = ref(Date.now())
-const { data: summary, refresh } = await useAuthFetch(
-  computed(() => `/api/stockholdings/summary?_t=${priceCacheBust.value}`),
-  { key: 'stocks-summary' }
-)
+const { data: summary, refresh } = await useAuthFetch('/api/stockholdings/summary', { key: 'stocks-summary' })
 
 watch(refreshKey, () => refresh())
 
@@ -90,12 +86,7 @@ function money(v: any) { return Number(v).toLocaleString('zh-TW') }
 const refreshing = ref(false)
 async function refreshPrices() {
   refreshing.value = true
-  try {
-    priceCacheBust.value = Date.now()
-    await refresh()
-  } finally {
-    refreshing.value = false
-  }
+  try { await refresh() } finally { refreshing.value = false }
 }
 </script>
 
@@ -132,7 +123,7 @@ async function refreshPrices() {
 
     <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
       <!-- 篩選列 -->
-      <div class="flex items-center gap-3 px-5 py-3 border-b border-slate-100">
+      <div class="flex flex-wrap items-end gap-3 px-5 py-3 border-b border-slate-100">
         <div>
           <label class="block text-xs font-medium text-slate-500 mb-1">代號 / 名稱</label>
           <input v-model="filterCode" type="text" placeholder="搜尋…" @input="currentPage = 1"
@@ -150,27 +141,21 @@ async function refreshPrices() {
           <label class="block text-xs font-medium text-slate-500 mb-1">交易類型</label>
           <div class="flex rounded-lg border border-slate-200 overflow-hidden text-xs font-medium">
             <button @click="filterTradeType = 'all'; currentPage = 1"
-              class="px-3 py-1.5 transition"
-              :class="filterTradeType === 'all' ? 'bg-slate-700 text-white' : 'text-slate-500 hover:bg-slate-50'">
-              全部
-            </button>
+              :class="filterTradeType === 'all' ? 'bg-slate-700 text-white' : 'text-slate-500 hover:bg-slate-50'"
+              class="px-3 py-1.5 transition">全部</button>
             <button @click="filterTradeType = 'buy'; currentPage = 1"
-              class="px-3 py-1.5 border-l border-slate-200 transition"
-              :class="filterTradeType === 'buy' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'">
-              買進
-            </button>
+              :class="filterTradeType === 'buy' ? 'bg-red-500 text-white' : 'text-slate-500 hover:bg-slate-50'"
+              class="px-3 py-1.5 border-l border-slate-200 transition">買進</button>
             <button @click="filterTradeType = 'sell'; currentPage = 1"
-              class="px-3 py-1.5 border-l border-slate-200 transition"
-              :class="filterTradeType === 'sell' ? 'bg-green-600 text-white' : 'text-slate-500 hover:bg-slate-50'">
-              賣出
-            </button>
+              :class="filterTradeType === 'sell' ? 'bg-green-500 text-white' : 'text-slate-500 hover:bg-slate-50'"
+              class="px-3 py-1.5 border-l border-slate-200 transition">賣出</button>
           </div>
         </div>
         <button v-if="hasFilter" @click="clearFilters"
-          class="mt-4 px-3 py-1.5 text-xs font-medium text-slate-500 border border-slate-200 rounded-lg hover:bg-slate-50 transition">
+          class="px-3 py-1.5 text-xs font-medium text-slate-500 border border-slate-200 rounded-lg hover:bg-slate-50 transition">
           清除篩選
         </button>
-        <span v-if="hasFilter" class="mt-4 text-xs text-slate-400">共 {{ sortedItems.length }} 筆</span>
+        <span v-if="hasFilter" class="text-xs text-slate-400">共 {{ sortedItems.length }} 筆</span>
       </div>
 
       <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
@@ -210,13 +195,9 @@ async function refreshPrices() {
                 均成本
                 <span class="ml-1 opacity-50">{{ sortKey === 'averageCost' ? (sortDir === 'asc' ? '↑' : '↓') : '↕' }}</span>
               </th>
-              <th class="text-right px-4 py-3 text-xs font-medium text-indigo-500 cursor-pointer select-none hover:text-indigo-600" @click="toggleSort('currentPrice')">
+              <th class="text-right px-4 py-3 text-xs font-medium text-slate-500 cursor-pointer select-none hover:text-indigo-600" @click="toggleSort('currentPrice')">
                 現價
                 <span class="ml-1 opacity-50">{{ sortKey === 'currentPrice' ? (sortDir === 'asc' ? '↑' : '↓') : '↕' }}</span>
-              </th>
-              <th class="text-right px-4 py-3 text-xs font-medium text-green-600 cursor-pointer select-none hover:text-green-700" @click="toggleSort('averageCost')">
-                賣出價
-                <span class="ml-1 opacity-50">{{ sortKey === 'averageCost' ? (sortDir === 'asc' ? '↑' : '↓') : '↕' }}</span>
               </th>
               <th class="text-right px-4 py-3 text-xs font-medium text-slate-500 cursor-pointer select-none hover:text-indigo-600" @click="toggleSort('cost')">
                 成本總額
@@ -274,19 +255,11 @@ async function refreshPrices() {
               <td class="px-4 py-3.5 text-right text-slate-700">
                 {{ h.shares < 0 ? (h.costBasis ?? h.averageCost).toLocaleString() : h.averageCost.toLocaleString() }}
               </td>
-              <!-- 現價：只有買進才顯示 -->
+              <!-- 現價：賣出行顯示賣出價 -->
               <td class="px-4 py-3.5 text-right">
-                <span v-if="h.shares >= 0" class="font-medium text-indigo-700">
-                  {{ h.currentPrice ? h.currentPrice.toLocaleString() : '—' }}
+                <span class="font-medium text-slate-800">
+                  {{ h.shares < 0 ? h.averageCost.toLocaleString() : (h.currentPrice ? h.currentPrice.toLocaleString() : '—') }}
                 </span>
-                <span v-else class="text-slate-300">—</span>
-              </td>
-              <!-- 賣出價：只有賣出才顯示 -->
-              <td class="px-4 py-3.5 text-right">
-                <span v-if="h.shares < 0" class="font-medium text-green-700">
-                  {{ h.averageCost.toLocaleString() }}
-                </span>
-                <span v-else class="text-slate-300">—</span>
               </td>
               <!-- 成本總額：賣出行顯示成本基礎金額 -->
               <td class="px-4 py-3.5 text-right text-slate-600">

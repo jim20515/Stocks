@@ -4,7 +4,7 @@ export default defineEventHandler(async (event) => {
   const client = useDb(token)
 
   const [{ data: holdings, error }, { data: settings }] = await Promise.all([
-    client.from('stock_holdings').select('*').eq('user_id', userId).order('stock_code'),
+    client.from('stock_holdings').select('*').eq('user_id', userId).order('buy_date'),
     client.from('portfolio_settings').select('cash_amount').eq('user_id', userId).single(),
   ])
 
@@ -15,19 +15,37 @@ export default defineEventHandler(async (event) => {
     return { items: [], cashAmount, totalCost: 0, totalValue: 0, totalProfit: 0, totalProfitPct: 0, totalRealizedProfit: 0, priceDate: null }
   }
 
-  // 計算每支股票的 WACC（只從買入筆數）
-  const waccMap: Record<string, number> = {}
-  const buyMap: Record<string, { totalCost: number; totalShares: number }> = {}
+  // 按交易日排序後，逐筆計算每檔股票在「賣出當下」的歷史 WACC
+  // runningMap: 記錄目前累積的買入成本與股數（隨時間推進）
+  const runningMap: Record<string, { totalCost: number; totalShares: number }> = {}
+  // sellWaccMap: 每筆賣出記錄對應的歷史 WACC（用 id 為 key）
+  const sellWaccMap: Record<number, number> = {}
+
   for (const h of holdings) {
+    const code = h.stock_code.toUpperCase()
+    if (!runningMap[code]) runningMap[code] = { totalCost: 0, totalShares: 0 }
+
     if (h.shares > 0) {
-      const code = h.stock_code.toUpperCase()
-      if (!buyMap[code]) buyMap[code] = { totalCost: 0, totalShares: 0 }
-      buyMap[code].totalCost += Number(h.average_cost) * h.shares
-      buyMap[code].totalShares += h.shares
+      // 買入：累積加權成本
+      runningMap[code].totalCost += Number(h.average_cost) * h.shares
+      runningMap[code].totalShares += h.shares
+    } else {
+      // 賣出：記錄此時的 WACC，再從累積中扣除
+      const { totalCost, totalShares } = runningMap[code]
+      const wacc = totalShares > 0 ? totalCost / totalShares : Number(h.average_cost)
+      sellWaccMap[h.id] = wacc
+      const absShares = Math.abs(h.shares)
+      runningMap[code].totalCost -= wacc * absShares
+      runningMap[code].totalShares -= absShares
+      if (runningMap[code].totalShares < 0) runningMap[code].totalShares = 0
+      if (runningMap[code].totalCost < 0) runningMap[code].totalCost = 0
     }
   }
-  for (const [code, { totalCost, totalShares }] of Object.entries(buyMap)) {
-    waccMap[code] = totalShares > 0 ? totalCost / totalShares : 0
+
+  // 計算最終 WACC（剩餘持股用）
+  const finalWaccMap: Record<string, number> = {}
+  for (const [code, { totalCost, totalShares }] of Object.entries(runningMap)) {
+    finalWaccMap[code] = totalShares > 0 ? totalCost / totalShares : 0
   }
 
   // 計算每支股票的淨持股（買入 - 賣出）
@@ -44,10 +62,10 @@ export default defineEventHandler(async (event) => {
   const items = holdings.map(h => {
     const isSell = h.shares < 0
     const currentPrice = prices[h.stock_code.toUpperCase()] ?? null
-    const wacc = waccMap[h.stock_code.toUpperCase()] ?? Number(h.average_cost)
 
     if (isSell) {
-      // 賣出行：averageCost = 賣出價，損益 = (賣出價 - WACC) × |shares|
+      // 賣出行：使用賣出當下的歷史 WACC
+      const wacc = sellWaccMap[h.id] ?? Number(h.average_cost)
       const sellPrice = Number(h.average_cost)
       const absShares = Math.abs(h.shares)
       const realizedProfit = Math.round((sellPrice - wacc) * absShares)
@@ -72,7 +90,7 @@ export default defineEventHandler(async (event) => {
       }
     }
 
-    // 買入行：正常計算
+    // 買入行：正常計算（cost 用原始 average_cost，顯示用；總計用 finalWacc）
     const cost = Number(h.average_cost) * h.shares
     const value = currentPrice ? currentPrice * h.shares : 0
     const profit = value - cost
@@ -97,12 +115,12 @@ export default defineEventHandler(async (event) => {
 
   const sellItems = items.filter(i => i.isRealized)
 
-  // 總成本／總市值：用淨持股 × 均成本／現價
+  // 總成本／總市值：用淨持股 × 最終均成本／現價
   let totalCost = 0
   let totalValue = 0
   for (const [codeUpper, netShares] of Object.entries(netSharesMap)) {
     if (netShares <= 0) continue
-    const wacc = waccMap[codeUpper] ?? 0
+    const wacc = finalWaccMap[codeUpper] ?? 0
     const price = prices[codeUpper] ?? null
     totalCost += wacc * netShares
     totalValue += price ? price * netShares : wacc * netShares
