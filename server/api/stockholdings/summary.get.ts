@@ -57,11 +57,15 @@ export default defineEventHandler(async (event) => {
 
   const buyHoldings = holdings.filter(h => h.shares > 0)
   const codes = [...new Set(buyHoldings.map(h => h.stock_code))]
-  const prices = await fetchPrices(codes)
+  const priceInfos = await fetchPricesWithChange(codes)
+  const prices: Record<string, number> = {}
+  for (const [code, info] of Object.entries(priceInfos)) prices[code] = info.price
 
   const items = holdings.map(h => {
     const isSell = h.shares < 0
-    const currentPrice = prices[h.stock_code.toUpperCase()] ?? null
+    const codeUpper = h.stock_code.toUpperCase()
+    const currentPrice = prices[codeUpper] ?? null
+    const dailyChangePct = priceInfos[codeUpper]?.changePct ?? null
 
     if (isSell) {
       // 賣出行：使用賣出當下的歷史 WACC
@@ -105,6 +109,7 @@ export default defineEventHandler(async (event) => {
       leverageMultiplier: Number(h.leverage_multiplier),
       watermarkPrice: h.watermark_price ? Number(h.watermark_price) : null,
       currentPrice,
+      dailyChangePct,
       cost: Math.round(cost),
       value: Math.round(value),
       profit: Math.round(profit),
@@ -118,15 +123,25 @@ export default defineEventHandler(async (event) => {
   // 總成本／總市值：用淨持股 × 最終均成本／現價
   let totalCost = 0
   let totalValue = 0
+  let totalPrevValue = 0   // 昨日市值（用昨收計算）
   for (const [codeUpper, netShares] of Object.entries(netSharesMap)) {
     if (netShares <= 0) continue
     const wacc = finalWaccMap[codeUpper] ?? 0
-    const price = prices[codeUpper] ?? null
+    const info = priceInfos[codeUpper]
+    const price = info?.price ?? null
+    const prevClose = info?.prevClose ?? null
     totalCost += wacc * netShares
     totalValue += price ? price * netShares : wacc * netShares
+    totalPrevValue += prevClose ? prevClose * netShares : (price ?? wacc) * netShares
   }
   totalCost = Math.round(totalCost)
   totalValue = Math.round(totalValue)
+
+  // 今日漲跌（股票部位，不含現金）
+  const dailyChange = Math.round(totalValue - totalPrevValue)
+  const dailyChangePct = totalPrevValue > 0
+    ? Math.round(dailyChange / totalPrevValue * 10000) / 100
+    : null
 
   const totalProfit = totalValue - totalCost
   const totalProfitPct = totalCost > 0 && totalValue > 0
@@ -139,6 +154,8 @@ export default defineEventHandler(async (event) => {
     cashAmount,
     totalCost,
     totalValue,
+    dailyChange,
+    dailyChangePct,
     totalProfit: Math.round(totalProfit),
     totalProfitPct,
     totalRealizedProfit: Math.round(totalRealizedProfit),

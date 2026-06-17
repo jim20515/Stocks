@@ -4,6 +4,7 @@ const LISTED_URL = 'https://openapi.twse.com.tw/v1/opendata/t187ap03_L'
 const OTC_URL = 'https://openapi.twse.com.tw/v1/opendata/t187ap03_O'
 
 interface MisItem { c?: string; z?: string; y?: string; n?: string; ch?: string; b?: string; a?: string }
+export interface PriceInfo { price: number; prevClose: number | null; changePct: number | null }
 interface MisResp { msgArray?: MisItem[] }
 interface OtcPrice { SecuritiesCompanyCode: string; ClosePrice: string }
 interface CompanyInfo { 公司代號: string; 公司簡稱: string }
@@ -111,6 +112,53 @@ async function fetchYahooPrices(codes: string[]): Promise<Record<string, number>
       }))
     } catch {}
   }
+  return result
+}
+
+/** 批次取得多支股票今日股價（含昨收、漲跌幅），主要來源為 MIS */
+export async function fetchPricesWithChange(codes: string[]): Promise<Record<string, PriceInfo>> {
+  const result: Record<string, PriceInfo> = {}
+  if (!codes.length) return result
+
+  // MIS 即時（含昨收 y）
+  for (const ex of ['tse', 'otc']) {
+    const remaining = codes.filter(c => !(c.toUpperCase() in result))
+    for (let i = 0; i < remaining.length; i += 50) {
+      const batch = remaining.slice(i, i + 50)
+      const ex_ch = batch.map(c => `${ex}_${c.toLowerCase()}.tw`).join('|')
+      try {
+        const data = await $fetch<MisResp>(`${MIS_URL}${ex_ch}`)
+        for (const item of data?.msgArray ?? []) {
+          const code = codeFromCh(item.ch)
+          if (!code) continue
+          const price = parseMisPrice(item)
+          if (price === null) continue
+          const prevClose = item.y && item.y !== '-' ? parseFloat(item.y) : null
+          const changePct = prevClose && prevClose > 0
+            ? Math.round((price - prevClose) / prevClose * 10000) / 100
+            : null
+          result[code] = { price, prevClose, changePct }
+        }
+      } catch {}
+    }
+  }
+
+  // 抓不到的 → Yahoo（無昨收資訊）
+  const missing = codes.filter(c => !(c.toUpperCase() in result))
+  if (missing.length) {
+    const yahooResult = await fetchYahooPrices(missing)
+    for (const [code, price] of Object.entries(yahooResult)) {
+      result[code] = { price, prevClose: null, changePct: null }
+    }
+  }
+
+  // 還找不到的 → TWSE 月報備援
+  const stillMissing = codes.filter(c => !(c.toUpperCase() in result))
+  await Promise.all(stillMissing.map(async (code) => {
+    const { price } = await fetchTwseDayLatest(code)
+    if (price !== null) result[code.toUpperCase()] = { price, prevClose: null, changePct: null }
+  }))
+
   return result
 }
 

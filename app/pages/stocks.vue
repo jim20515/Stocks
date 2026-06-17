@@ -97,9 +97,14 @@ async function refreshPrices() {
         <p class="text-xs text-slate-400 mb-1">總成本</p>
         <p class="text-sm sm:text-xl font-bold text-slate-800 truncate">{{ money(s.totalCost) }}</p>
       </div>
-      <div class="bg-white rounded-xl p-3 sm:p-5 border border-slate-200">
+      <div class="bg-white rounded-xl p-3 sm:p-5 border border-slate-200"
+        :class="s.dailyChange > 0 ? 'border-l-4 border-l-red-400' : s.dailyChange < 0 ? 'border-l-4 border-l-green-500' : ''">
         <p class="text-xs text-slate-400 mb-1">總市值</p>
         <p class="text-sm sm:text-xl font-bold text-slate-800 truncate">{{ money(s.totalValue) }}</p>
+        <p v-if="s.dailyChangePct != null" class="text-xs font-medium mt-0.5"
+          :class="s.dailyChange > 0 ? 'text-red-500' : s.dailyChange < 0 ? 'text-green-600' : 'text-slate-400'">
+          今日 {{ s.dailyChange > 0 ? '+' : '' }}{{ money(s.dailyChange) }}（{{ s.dailyChangePct > 0 ? '+' : '' }}{{ s.dailyChangePct }}%）
+        </p>
       </div>
       <div class="bg-white rounded-xl p-3 sm:p-5 border border-slate-200"
         :class="s.totalProfit >= 0 ? 'border-l-4 border-l-red-400' : 'border-l-4 border-l-green-500'">
