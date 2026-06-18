@@ -1,6 +1,7 @@
 <script setup lang="ts">
 const { authHeaders } = useAuth()
 const { data: snapshots, refresh } = await useAuthFetch<any[]>('/api/portfolio/snapshot')
+const { data: holdings } = await useAuthFetch<any[]>('/api/stockholdings/summary', { key: 'daily-summary' })
 
 const allRows = computed(() => snapshots.value ?? [])
 
@@ -23,28 +24,65 @@ function pct(v: any) {
   return (v > 0 ? '+' : '') + Number(v).toFixed(2) + '%'
 }
 
-// 歷史匯入
-const importing = ref(false)
-const importResult = ref<{ datesProcessed?: number; firstDate?: string; lastDate?: string; message?: string } | null>(null)
+// 歷史匯入進度
+const showModal = ref(false)
+const importDone = ref(false)
 const importError = ref('')
+const progressLog = ref<{ month: string; tradingDays: number; pricesInserted: number; status: 'pending' | 'running' | 'done' | 'error' }[]>([])
+const currentMonthIdx = ref(0)
+
+function buildMonthList(): { year: number; month: number; label: string }[] {
+  const items = (holdings.value as any)?.items ?? []
+  if (!items.length) return []
+  const dates = items.map((h: any) => h.buyDate).filter(Boolean).sort()
+  if (!dates.length) return []
+
+  const first = new Date(dates[0])
+  const today = new Date()
+  const months = []
+  const cur = new Date(first.getFullYear(), first.getMonth(), 1)
+  while (cur <= today) {
+    months.push({
+      year: cur.getFullYear(),
+      month: cur.getMonth() + 1,
+      label: `${cur.getFullYear()} 年 ${String(cur.getMonth() + 1).padStart(2, '0')} 月`,
+    })
+    cur.setMonth(cur.getMonth() + 1)
+  }
+  return months
+}
 
 async function runHistoryImport() {
-  if (!confirm('將從第一筆交易日起抓取所有股票歷史收盤價，視持股數量可能需要 1~3 分鐘，確定執行？')) return
-  importing.value = true
-  importResult.value = null
+  const months = buildMonthList()
+  if (!months.length) { alert('尚無交易記錄'); return }
+
+  showModal.value = true
+  importDone.value = false
   importError.value = ''
-  try {
-    const res = await $fetch<any>('/api/portfolio/history-import', {
-      method: 'POST',
-      headers: authHeaders.value as HeadersInit,
-    })
-    importResult.value = res
-    await refresh()
-  } catch (e: any) {
-    importError.value = e?.data?.message ?? '匯入失敗，請稍後再試'
-  } finally {
-    importing.value = false
+  currentMonthIdx.value = 0
+  progressLog.value = months.map(m => ({ month: m.label, tradingDays: 0, pricesInserted: 0, status: 'pending' as const }))
+
+  for (let i = 0; i < months.length; i++) {
+    currentMonthIdx.value = i
+    progressLog.value[i].status = 'running'
+
+    try {
+      const res = await $fetch<any>('/api/portfolio/history-import', {
+        method: 'POST',
+        headers: authHeaders.value as HeadersInit,
+        body: { year: months[i].year, month: months[i].month },
+      })
+      progressLog.value[i].tradingDays = res.tradingDays ?? 0
+      progressLog.value[i].pricesInserted = res.pricesInserted ?? 0
+      progressLog.value[i].status = 'done'
+    } catch (e: any) {
+      progressLog.value[i].status = 'error'
+      importError.value = `${months[i].label} 失敗：${e?.data?.message ?? '未知錯誤'}`
+    }
   }
+
+  importDone.value = true
+  await refresh()
 }
 </script>
 
@@ -77,21 +115,54 @@ async function runHistoryImport() {
       </div>
     </div>
 
-    <!-- 匯入結果提示 -->
-    <div v-if="importResult" class="flex items-center gap-2 px-4 py-3 bg-green-50 border border-green-200 rounded-xl text-sm text-green-700">
-      <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-      </svg>
-      <span v-if="importResult.message">{{ importResult.message }}</span>
-      <span v-else>
-        匯入完成！共 {{ importResult.datesProcessed }} 個交易日（{{ importResult.firstDate }} ～ {{ importResult.lastDate }}）
-      </span>
-    </div>
-    <div v-if="importError" class="flex items-center gap-2 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600">
-      <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-      {{ importError }}
+    <!-- 進度 Modal -->
+    <div v-if="showModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+      <div class="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4">
+        <div class="flex items-center justify-between">
+          <h3 class="font-bold text-slate-800 text-base">匯入歷史資料</h3>
+          <span v-if="!importDone" class="text-xs text-slate-400 animate-pulse">處理中…</span>
+          <span v-else class="text-xs text-green-600 font-medium">✓ 完成</span>
+        </div>
+
+        <!-- 總進度條 -->
+        <div class="w-full bg-slate-100 rounded-full h-2">
+          <div class="bg-indigo-500 h-2 rounded-full transition-all duration-300"
+            :style="{ width: progressLog.length ? ((currentMonthIdx + (importDone ? 1 : 0)) / progressLog.length * 100) + '%' : '0%' }">
+          </div>
+        </div>
+        <p class="text-xs text-slate-500 text-center">
+          {{ importDone ? progressLog.length : currentMonthIdx + 1 }} / {{ progressLog.length }} 個月份
+        </p>
+
+        <!-- 月份列表 -->
+        <div class="max-h-64 overflow-y-auto space-y-1.5 pr-1">
+          <div v-for="(item, idx) in progressLog" :key="idx"
+            class="flex items-center justify-between px-3 py-2 rounded-lg text-xs"
+            :class="item.status === 'running' ? 'bg-indigo-50 border border-indigo-200'
+                  : item.status === 'done'    ? 'bg-slate-50'
+                  : item.status === 'error'   ? 'bg-red-50'
+                  : 'text-slate-300'">
+            <div class="flex items-center gap-2">
+              <span v-if="item.status === 'running'" class="w-3 h-3 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin inline-block"></span>
+              <span v-else-if="item.status === 'done'" class="text-green-500">✓</span>
+              <span v-else-if="item.status === 'error'" class="text-red-500">✗</span>
+              <span v-else class="w-3 h-3 rounded-full bg-slate-200 inline-block"></span>
+              <span :class="item.status === 'pending' ? 'text-slate-400' : 'text-slate-700'">{{ item.month }}</span>
+            </div>
+            <span v-if="item.status === 'done'" class="text-slate-400">
+              {{ item.tradingDays }} 個交易日　{{ item.pricesInserted }} 筆收盤價
+            </span>
+            <span v-else-if="item.status === 'running'" class="text-indigo-500">抓取中…</span>
+          </div>
+        </div>
+
+        <div v-if="importError" class="text-xs text-red-500 px-1">{{ importError }}</div>
+
+        <button v-if="importDone" @click="showModal = false"
+          class="w-full py-2 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 transition">
+          關閉
+        </button>
+      </div>
     </div>
 
     <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">

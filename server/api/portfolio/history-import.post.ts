@@ -1,175 +1,190 @@
-// 歷史資料匯入：從第一筆交易日開始，抓所有股票每日收盤價，重算每日投資組合市值
+// 單月歷史資料匯入：每次只處理一個月份，避免 Vercel 函式逾時
 export default defineEventHandler(async (event) => {
   const userId = await requireUser(event)
   const token = getBearerToken(event)
   const client = useDb(token)
+  const body = await readBody(event)
+  const { year, month } = body as { year: number; month: number }
+
+  if (!year || !month) throw createError({ statusCode: 400, message: '缺少 year / month 參數' })
 
   const [{ data: holdings }, { data: settings }] = await Promise.all([
     client.from('stock_holdings').select('*').eq('user_id', userId).order('buy_date'),
     client.from('portfolio_settings').select('cash_amount').eq('user_id', userId).single(),
   ])
 
-  if (!holdings?.length) return { success: true, message: '尚無交易記錄' }
+  if (!holdings?.length) return { success: true, pricesInserted: 0, snapshotsInserted: 0 }
 
   const cashAmount = Number((settings as any)?.cash_amount ?? 0)
-
-  // 找最早交易日
-  const firstDate = holdings[0].buy_date as string
   const allCodes = [...new Set(holdings.map(h => h.stock_code.toUpperCase()))]
 
-  // Step 1: 抓歷史收盤價（逐月）
-  const today = new Date()
-  const startDate = new Date(firstDate)
-  const priceMap: Record<string, Record<string, number>> = {} // code → date → price
+  const mm = String(month).padStart(2, '0')
+  const dateStr = `${year}${mm}01`
+
+  // Step 1: 抓這個月所有股票的收盤價
+  const monthPrices: Record<string, Record<string, number>> = {} // code → date → price
+  let pricesInserted = 0
 
   for (const code of allCodes) {
-    priceMap[code] = {}
+    monthPrices[code] = {}
 
-    // 先查 DB 已有的資料
+    // 先查 DB 這個月是否已有資料
     const { data: existing } = await client
       .from('stock_daily_prices')
       .select('date, close_price')
       .eq('stock_code', code)
-    for (const row of existing ?? []) {
-      priceMap[code][row.date] = Number(row.close_price)
+      .gte('date', `${year}-${mm}-01`)
+      .lte('date', `${year}-${mm}-31`)
+
+    if (existing?.length) {
+      for (const row of existing) monthPrices[code][row.date] = Number(row.close_price)
+      continue  // 已有資料，跳過
     }
 
-    // 逐月抓 TWSE（補缺漏的月份）
-    const cur = new Date(startDate.getFullYear(), startDate.getMonth(), 1)
-    while (cur <= today) {
-      const dateStr = `${cur.getFullYear()}${String(cur.getMonth() + 1).padStart(2, '0')}01`
-
-      // 檢查這個月是否已有資料
-      const monthKey = dateStr.slice(0, 7).replace('', '-').slice(0, 7)
-      const hasThisMonth = Object.keys(priceMap[code]).some(d => d.startsWith(dateStr.slice(0, 4) + '-' + dateStr.slice(4, 6)))
-
-      if (!hasThisMonth) {
-        try {
-          const url = `https://www.twse.com.tw/exchangeReport/STOCK_DAY?response=json&date=${dateStr}&stockNo=${code}`
-          const resp = await $fetch<any>(url, { headers: { 'User-Agent': 'Mozilla/5.0' } })
-
-          if (resp?.stat === 'OK' && resp.data?.length) {
-            const toInsert: { stock_code: string; date: string; close_price: number }[] = []
-            for (const row of resp.data) {
-              // row: [日期, 成交股數, 成交金額, 開盤價, 最高價, 最低價, 收盤價, 漲跌價差, 成交筆數]
-              const dateRaw = row[0] as string // 格式：115/06/13（民國）
-              const closeRaw = (row[6] as string).replace(/,/g, '')
-              const close = parseFloat(closeRaw)
-              if (isNaN(close)) continue
-
-              // 民國轉西元
-              const parts = dateRaw.split('/')
-              const year = parseInt(parts[0]) + 1911
-              const isoDate = `${year}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`
-
-              priceMap[code][isoDate] = close
-              toInsert.push({ stock_code: code, date: isoDate, close_price: close })
-            }
-            if (toInsert.length) {
-              await client.from('stock_daily_prices')
-                .upsert(toInsert, { onConflict: 'stock_code,date' })
-            }
-          }
-        } catch {}
-
-        // OTC 備援
-        if (!Object.keys(priceMap[code]).some(d => d.startsWith(dateStr.slice(0, 4) + '-' + dateStr.slice(4, 6)))) {
-          try {
-            const y = cur.getFullYear() - 1911
-            const m = String(cur.getMonth() + 1).padStart(2, '0')
-            const url = `https://www.tpex.org.tw/web/stock/aftertrading/daily_trading_info/st43_result.php?l=zh-tw&d=${y}/${m}&stkno=${code}&o=json`
-            const resp = await $fetch<any>(url, { headers: { 'User-Agent': 'Mozilla/5.0' } })
-
-            if (resp?.aaData?.length) {
-              const toInsert: { stock_code: string; date: string; close_price: number }[] = []
-              for (const row of resp.aaData) {
-                const dateRaw = row[0] as string
-                const closeRaw = (row[6] as string).replace(/,/g, '')
-                const close = parseFloat(closeRaw)
-                if (isNaN(close)) continue
-
-                const parts = dateRaw.split('/')
-                const year = parseInt(parts[0]) + 1911
-                const isoDate = `${year}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`
-
-                priceMap[code][isoDate] = close
-                toInsert.push({ stock_code: code, date: isoDate, close_price: close })
-              }
-              if (toInsert.length) {
-                await client.from('stock_daily_prices')
-                  .upsert(toInsert, { onConflict: 'stock_code,date' })
-              }
-            }
-          } catch {}
+    // TWSE
+    let fetched = false
+    try {
+      const url = `https://www.twse.com.tw/exchangeReport/STOCK_DAY?response=json&date=${dateStr}&stockNo=${code}`
+      const resp = await $fetch<any>(url, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+      if (resp?.stat === 'OK' && resp.data?.length) {
+        const toInsert: { stock_code: string; date: string; close_price: number }[] = []
+        for (const row of resp.data) {
+          const dateRaw = row[0] as string
+          const close = parseFloat((row[6] as string).replace(/,/g, ''))
+          if (isNaN(close)) continue
+          const parts = dateRaw.split('/')
+          const isoDate = `${parseInt(parts[0]) + 1911}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`
+          monthPrices[code][isoDate] = close
+          toInsert.push({ stock_code: code, date: isoDate, close_price: close })
+        }
+        if (toInsert.length) {
+          await client.from('stock_daily_prices').upsert(toInsert, { onConflict: 'stock_code,date' })
+          pricesInserted += toInsert.length
+          fetched = true
         }
       }
+    } catch {}
 
-      cur.setMonth(cur.getMonth() + 1)
+    // OTC 備援
+    if (!fetched) {
+      try {
+        const rocYear = year - 1911
+        const url = `https://www.tpex.org.tw/web/stock/aftertrading/daily_trading_info/st43_result.php?l=zh-tw&d=${rocYear}/${mm}&stkno=${code}&o=json`
+        const resp = await $fetch<any>(url, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+        if (resp?.aaData?.length) {
+          const toInsert: { stock_code: string; date: string; close_price: number }[] = []
+          for (const row of resp.aaData) {
+            const dateRaw = row[0] as string
+            const close = parseFloat((row[6] as string).replace(/,/g, ''))
+            if (isNaN(close)) continue
+            const parts = dateRaw.split('/')
+            const isoDate = `${parseInt(parts[0]) + 1911}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`
+            monthPrices[code][isoDate] = close
+            toInsert.push({ stock_code: code, date: isoDate, close_price: close })
+          }
+          if (toInsert.length) {
+            await client.from('stock_daily_prices').upsert(toInsert, { onConflict: 'stock_code,date' })
+            pricesInserted += toInsert.length
+          }
+        }
+      } catch {}
     }
   }
 
-  // Step 2: 依日期重算每日投資組合市值
-  // 取得所有有收盤價的日期
-  const allDates = new Set<string>()
+  // Step 2: 讀取這個月所有已知日期（從 DB）
+  const { data: allPricesThisMonth } = await client
+    .from('stock_daily_prices')
+    .select('stock_code, date, close_price')
+    .gte('date', `${year}-${mm}-01`)
+    .lte('date', `${year}-${mm}-31`)
+    .in('stock_code', allCodes)
+
+  // 整理成 date → code → price
+  const dayMap: Record<string, Record<string, number>> = {}
+  for (const row of allPricesThisMonth ?? []) {
+    if (!dayMap[row.date]) dayMap[row.date] = {}
+    dayMap[row.date][row.stock_code.toUpperCase()] = Number(row.close_price)
+  }
+
+  // Step 3: 讀取這個月之前所有日期的最後收盤價（作為 prevClose）
+  const tradingDays = Object.keys(dayMap).sort()
+  if (!tradingDays.length) {
+    return { success: true, pricesInserted, snapshotsInserted: 0, tradingDays: 0 }
+  }
+
+  // 取得前一交易日的收盤價（查 DB 這個月第一天之前的最後一筆）
+  const prevPrices: Record<string, number> = {}
   for (const code of allCodes) {
-    for (const date of Object.keys(priceMap[code])) {
-      if (date >= firstDate) allDates.add(date)
-    }
+    const { data: prev } = await client
+      .from('stock_daily_prices')
+      .select('close_price')
+      .eq('stock_code', code)
+      .lt('date', `${year}-${mm}-01`)
+      .order('date', { ascending: false })
+      .limit(1)
+    if (prev?.[0]) prevPrices[code] = Number(prev[0].close_price)
   }
-  const sortedDates = [...allDates].sort()
 
-  const snapshots: { user_id: string; date: string; total_value: number; daily_change: number; daily_change_pct: number | null }[] = []
+  // Step 4: 重算這個月每個交易日的投資組合市值
+  const snapshots: any[] = []
+  let prevTotalStock: number | null = null
 
-  let prevTotalStock = 0
+  // 取得這個月第一天之前最後一筆 snapshot 的 total_value（作為起始 prevTotalStock）
+  const { data: lastSnap } = await client
+    .from('portfolio_daily_snapshot')
+    .select('total_value, date')
+    .eq('user_id', userId)
+    .lt('date', `${year}-${mm}-01`)
+    .order('date', { ascending: false })
+    .limit(1)
 
-  for (const date of sortedDates) {
-    // 計算截至當天的淨持股（只含當天或之前的交易）
+  if (lastSnap?.[0]) {
+    prevTotalStock = lastSnap[0].total_value - cashAmount
+  }
+
+  for (const date of tradingDays) {
     const activeHoldings = holdings.filter(h => h.buy_date <= date)
-
-    // 計算淨持股 map
     const netMap: Record<string, number> = {}
     for (const h of activeHoldings) {
       const code = h.stock_code.toUpperCase()
       netMap[code] = (netMap[code] ?? 0) + h.shares
     }
 
-    // 計算當天總市值（股票部位）
     let totalStock = 0
     for (const [code, netShares] of Object.entries(netMap)) {
       if (netShares <= 0) continue
-      const price = priceMap[code]?.[date]
+      const price = dayMap[date]?.[code]
       if (price == null) continue
       totalStock += price * netShares
     }
 
     const totalValue = Math.round(totalStock) + cashAmount
-    const dailyChange = Math.round(totalStock - prevTotalStock)
-    const dailyChangePct = prevTotalStock > 0
-      ? Math.round(dailyChange / prevTotalStock * 10000) / 100
-      : null
 
-    snapshots.push({
-      user_id: userId,
-      date,
-      total_value: totalValue,
-      daily_change: dailyChange,
-      daily_change_pct: dailyChangePct,
-    })
+    // prevTotalStock: 用前一天的股票市值
+    let dailyChange = 0
+    let dailyChangePct: number | null = null
+    if (prevTotalStock !== null) {
+      dailyChange = Math.round(totalStock - prevTotalStock)
+      dailyChangePct = prevTotalStock > 0
+        ? Math.round(dailyChange / prevTotalStock * 10000) / 100
+        : null
+    }
 
+    snapshots.push({ user_id: userId, date, total_value: totalValue, daily_change: dailyChange, daily_change_pct: dailyChangePct })
     prevTotalStock = totalStock
   }
 
-  // 批次寫入 portfolio_daily_snapshot
-  const BATCH = 50
-  for (let i = 0; i < snapshots.length; i += BATCH) {
+  if (snapshots.length) {
     await client.from('portfolio_daily_snapshot')
-      .upsert(snapshots.slice(i, i + BATCH), { onConflict: 'user_id,date' })
+      .upsert(snapshots, { onConflict: 'user_id,date' })
   }
 
   return {
     success: true,
-    datesProcessed: sortedDates.length,
-    firstDate,
-    lastDate: sortedDates[sortedDates.length - 1] ?? null,
+    pricesInserted,
+    snapshotsInserted: snapshots.length,
+    tradingDays: tradingDays.length,
+    firstDay: tradingDays[0] ?? null,
+    lastDay: tradingDays[tradingDays.length - 1] ?? null,
   }
 })
