@@ -26,9 +26,10 @@ function pct(v: any) {
 
 // 歷史匯入進度
 const showModal = ref(false)
+const importing = ref(false)
 const importDone = ref(false)
 const importError = ref('')
-const progressLog = ref<{ month: string; tradingDays: number; pricesInserted: number; status: 'pending' | 'running' | 'done' | 'error' }[]>([])
+const progressLog = ref<{ month: string; tradingDays: number; pricesInserted: number; status: 'pending' | 'running' | 'done' | 'error'; debugLog?: string[] }[]>([])
 const currentMonthIdx = ref(0)
 
 function buildMonthList(): { year: number; month: number; label: string }[] {
@@ -56,6 +57,7 @@ async function runHistoryImport() {
   const months = buildMonthList()
   if (!months.length) { alert('尚無交易記錄'); return }
 
+  importing.value = true
   showModal.value = true
   importDone.value = false
   importError.value = ''
@@ -74,6 +76,7 @@ async function runHistoryImport() {
       })
       progressLog.value[i].tradingDays = res.tradingDays ?? 0
       progressLog.value[i].pricesInserted = res.pricesInserted ?? 0
+      progressLog.value[i].debugLog = res.debug ?? []
       progressLog.value[i].status = 'done'
     } catch (e: any) {
       progressLog.value[i].status = 'error'
@@ -82,6 +85,7 @@ async function runHistoryImport() {
   }
 
   importDone.value = true
+  importing.value = false
   await refresh()
 }
 </script>
@@ -151,6 +155,9 @@ async function runHistoryImport() {
             </div>
             <span v-if="item.status === 'done'" class="text-slate-400">
               {{ item.tradingDays }} 個交易日　{{ item.pricesInserted }} 筆收盤價
+              <span v-if="item.tradingDays === 0 && item.debugLog?.length"
+                class="ml-1 text-orange-400 cursor-pointer underline"
+                :title="item.debugLog.join('\n')">詳細</span>
             </span>
             <span v-else-if="item.status === 'running'" class="text-indigo-500">抓取中…</span>
           </div>

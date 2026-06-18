@@ -1,4 +1,3 @@
-// 單月歷史資料匯入：每次只處理一個月份，避免 Vercel 函式逾時
 export default defineEventHandler(async (event) => {
   const userId = await requireUser(event)
   const token = getBearerToken(event)
@@ -13,7 +12,7 @@ export default defineEventHandler(async (event) => {
     client.from('portfolio_settings').select('cash_amount').eq('user_id', userId).single(),
   ])
 
-  if (!holdings?.length) return { success: true, pricesInserted: 0, snapshotsInserted: 0 }
+  if (!holdings?.length) return { success: true, pricesInserted: 0, snapshotsInserted: 0, tradingDays: 0 }
 
   const cashAmount = Number((settings as any)?.cash_amount ?? 0)
   const allCodes = [...new Set(holdings.map(h => h.stock_code.toUpperCase()))]
@@ -21,14 +20,11 @@ export default defineEventHandler(async (event) => {
   const mm = String(month).padStart(2, '0')
   const dateStr = `${year}${mm}01`
 
-  // Step 1: 抓這個月所有股票的收盤價
-  const monthPrices: Record<string, Record<string, number>> = {} // code → date → price
   let pricesInserted = 0
+  const debugLog: string[] = []
 
   for (const code of allCodes) {
-    monthPrices[code] = {}
-
-    // 先查 DB 這個月是否已有資料
+    // 查 DB 這個月是否已有資料
     const { data: existing } = await client
       .from('stock_daily_prices')
       .select('date, close_price')
@@ -37,33 +33,48 @@ export default defineEventHandler(async (event) => {
       .lte('date', `${year}-${mm}-31`)
 
     if (existing?.length) {
-      for (const row of existing) monthPrices[code][row.date] = Number(row.close_price)
-      continue  // 已有資料，跳過
+      debugLog.push(`${code}: DB已有${existing.length}筆，跳過`)
+      continue
     }
 
     // TWSE
     let fetched = false
     try {
       const url = `https://www.twse.com.tw/exchangeReport/STOCK_DAY?response=json&date=${dateStr}&stockNo=${code}`
-      const resp = await $fetch<any>(url, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+      const resp = await $fetch<any>(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' },
+      })
+
+      debugLog.push(`${code} TWSE stat=${resp?.stat} rows=${resp?.data?.length ?? 0}`)
+
       if (resp?.stat === 'OK' && resp.data?.length) {
         const toInsert: { stock_code: string; date: string; close_price: number }[] = []
         for (const row of resp.data) {
-          const dateRaw = row[0] as string
+          const dateRaw = row[0] as string  // 格式：115/02/03
+          // 收盤價：TWSE STOCK_DAY 欄位順序：日期,成交股數,成交金額,開盤,最高,最低,收盤,漲跌,筆數
           const close = parseFloat((row[6] as string).replace(/,/g, ''))
-          if (isNaN(close)) continue
+          if (isNaN(close) || close <= 0) continue
           const parts = dateRaw.split('/')
+          if (parts.length < 3) continue
           const isoDate = `${parseInt(parts[0]) + 1911}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`
-          monthPrices[code][isoDate] = close
           toInsert.push({ stock_code: code, date: isoDate, close_price: close })
         }
         if (toInsert.length) {
-          await client.from('stock_daily_prices').upsert(toInsert, { onConflict: 'stock_code,date' })
-          pricesInserted += toInsert.length
-          fetched = true
+          const { error: upsertErr } = await client
+            .from('stock_daily_prices')
+            .upsert(toInsert, { onConflict: 'stock_code,date' })
+          if (upsertErr) {
+            debugLog.push(`${code} upsert失敗: ${upsertErr.message}`)
+          } else {
+            pricesInserted += toInsert.length
+            fetched = true
+            debugLog.push(`${code}: 寫入${toInsert.length}筆`)
+          }
         }
       }
-    } catch {}
+    } catch (e: any) {
+      debugLog.push(`${code} TWSE例外: ${e?.message ?? e}`)
+    }
 
     // OTC 備援
     if (!fetched) {
@@ -71,27 +82,39 @@ export default defineEventHandler(async (event) => {
         const rocYear = year - 1911
         const url = `https://www.tpex.org.tw/web/stock/aftertrading/daily_trading_info/st43_result.php?l=zh-tw&d=${rocYear}/${mm}&stkno=${code}&o=json`
         const resp = await $fetch<any>(url, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+
+        debugLog.push(`${code} OTC rows=${resp?.aaData?.length ?? 0}`)
+
         if (resp?.aaData?.length) {
           const toInsert: { stock_code: string; date: string; close_price: number }[] = []
           for (const row of resp.aaData) {
             const dateRaw = row[0] as string
             const close = parseFloat((row[6] as string).replace(/,/g, ''))
-            if (isNaN(close)) continue
+            if (isNaN(close) || close <= 0) continue
             const parts = dateRaw.split('/')
+            if (parts.length < 3) continue
             const isoDate = `${parseInt(parts[0]) + 1911}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`
-            monthPrices[code][isoDate] = close
             toInsert.push({ stock_code: code, date: isoDate, close_price: close })
           }
           if (toInsert.length) {
-            await client.from('stock_daily_prices').upsert(toInsert, { onConflict: 'stock_code,date' })
-            pricesInserted += toInsert.length
+            const { error: upsertErr } = await client
+              .from('stock_daily_prices')
+              .upsert(toInsert, { onConflict: 'stock_code,date' })
+            if (upsertErr) {
+              debugLog.push(`${code} OTC upsert失敗: ${upsertErr.message}`)
+            } else {
+              pricesInserted += toInsert.length
+              debugLog.push(`${code} OTC: 寫入${toInsert.length}筆`)
+            }
           }
         }
-      } catch {}
+      } catch (e: any) {
+        debugLog.push(`${code} OTC例外: ${e?.message ?? e}`)
+      }
     }
   }
 
-  // Step 2: 讀取這個月所有已知日期（從 DB）
+  // 讀取這個月所有交易日
   const { data: allPricesThisMonth } = await client
     .from('stock_daily_prices')
     .select('stock_code, date, close_price')
@@ -99,48 +122,32 @@ export default defineEventHandler(async (event) => {
     .lte('date', `${year}-${mm}-31`)
     .in('stock_code', allCodes)
 
-  // 整理成 date → code → price
   const dayMap: Record<string, Record<string, number>> = {}
   for (const row of allPricesThisMonth ?? []) {
     if (!dayMap[row.date]) dayMap[row.date] = {}
     dayMap[row.date][row.stock_code.toUpperCase()] = Number(row.close_price)
   }
 
-  // Step 3: 讀取這個月之前所有日期的最後收盤價（作為 prevClose）
   const tradingDays = Object.keys(dayMap).sort()
+
   if (!tradingDays.length) {
-    return { success: true, pricesInserted, snapshotsInserted: 0, tradingDays: 0 }
+    return { success: true, pricesInserted, snapshotsInserted: 0, tradingDays: 0, debug: debugLog }
   }
 
-  // 取得前一交易日的收盤價（查 DB 這個月第一天之前的最後一筆）
-  const prevPrices: Record<string, number> = {}
-  for (const code of allCodes) {
-    const { data: prev } = await client
-      .from('stock_daily_prices')
-      .select('close_price')
-      .eq('stock_code', code)
-      .lt('date', `${year}-${mm}-01`)
-      .order('date', { ascending: false })
-      .limit(1)
-    if (prev?.[0]) prevPrices[code] = Number(prev[0].close_price)
-  }
-
-  // Step 4: 重算這個月每個交易日的投資組合市值
-  const snapshots: any[] = []
-  let prevTotalStock: number | null = null
-
-  // 取得這個月第一天之前最後一筆 snapshot 的 total_value（作為起始 prevTotalStock）
+  // 取前一交易日收盤（作為 prevClose）
   const { data: lastSnap } = await client
     .from('portfolio_daily_snapshot')
-    .select('total_value, date')
+    .select('total_value')
     .eq('user_id', userId)
     .lt('date', `${year}-${mm}-01`)
     .order('date', { ascending: false })
     .limit(1)
 
-  if (lastSnap?.[0]) {
-    prevTotalStock = lastSnap[0].total_value - cashAmount
-  }
+  let prevTotalStock: number | null = lastSnap?.[0]
+    ? lastSnap[0].total_value - cashAmount
+    : null
+
+  const snapshots: any[] = []
 
   for (const date of tradingDays) {
     const activeHoldings = holdings.filter(h => h.buy_date <= date)
@@ -159,16 +166,10 @@ export default defineEventHandler(async (event) => {
     }
 
     const totalValue = Math.round(totalStock) + cashAmount
-
-    // prevTotalStock: 用前一天的股票市值
-    let dailyChange = 0
-    let dailyChangePct: number | null = null
-    if (prevTotalStock !== null) {
-      dailyChange = Math.round(totalStock - prevTotalStock)
-      dailyChangePct = prevTotalStock > 0
-        ? Math.round(dailyChange / prevTotalStock * 10000) / 100
-        : null
-    }
+    const dailyChange = prevTotalStock !== null ? Math.round(totalStock - prevTotalStock) : 0
+    const dailyChangePct = prevTotalStock && prevTotalStock > 0
+      ? Math.round(dailyChange / prevTotalStock * 10000) / 100
+      : null
 
     snapshots.push({ user_id: userId, date, total_value: totalValue, daily_change: dailyChange, daily_change_pct: dailyChangePct })
     prevTotalStock = totalStock
@@ -186,5 +187,6 @@ export default defineEventHandler(async (event) => {
     tradingDays: tradingDays.length,
     firstDay: tradingDays[0] ?? null,
     lastDay: tradingDays[tradingDays.length - 1] ?? null,
+    debug: debugLog,
   }
 })
