@@ -1,5 +1,11 @@
 {
   "buildCommand": "npm run build",
   "outputDirectory": ".output/public",
-  "framework": "nuxtjs"
+  "framework": "nuxtjs",
+  "crons": [
+    {
+      "path": "/api/cron/daily-snapshot",
+      "schedule": "35 6 * * 1-5"
+    }
+  ]
 }
