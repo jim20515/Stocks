@@ -90,14 +90,17 @@ const refreshKey = useState('portfolioRefreshKey', () => 0)
 provide('refreshKey', refreshKey)
 provide('openEditModal', (holding: any) => {
   editingId.value = holding.id
+  const isSell = holding.shares < 0
   form.value = {
     stockCode: holding.stockCode,
     stockName: holding.stockName,
-    shares: holding.shares,
+    shares: String(Math.abs(holding.shares)),
     averageCost: holding.averageCost,
+    costBasis: holding.costBasis ? String(holding.costBasis) : '',
     buyDate: holding.buyDate,
     leverageMultiplier: holding.leverageMultiplier ?? 1,
     watermarkPrice: holding.watermarkPrice ?? '',
+    tradeType: isSell ? 'sell' : 'buy',
   }
   lookupError.value = ''
   showModal.value = true
@@ -290,7 +293,7 @@ async function submitForm() {
           <!-- 交易表單 -->
           <div class="p-6 space-y-4">
             <!-- 買入 / 賣出切換 -->
-            <div v-if="!editingId" class="flex gap-2">
+            <div class="flex gap-2">
               <button @click="form.tradeType = 'buy'"
                 :class="form.tradeType === 'buy' ? 'bg-red-500 text-white border-red-500' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'"
                 class="flex-1 py-2 text-sm font-semibold rounded-lg border transition">
@@ -342,9 +345,8 @@ async function submitForm() {
             <div>
               <label class="block text-xs font-medium text-slate-600 mb-1.5">持股類型</label>
               <select v-model="form.leverageMultiplier"
-                :disabled="!editingId"
-                :class="!editingId ? 'bg-slate-50 text-slate-400 cursor-not-allowed' : 'bg-white'"
-                class="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300">
+                disabled
+                class="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-slate-50 text-slate-400 cursor-not-allowed">
                 <option :value="1">1x 一般（Beta 貢獻 ×1）</option>
                 <option :value="2">2x 槓桿（Beta 貢獻 ×2）</option>
                 <option :value="0">類現金（Beta 貢獻 0）</option>
