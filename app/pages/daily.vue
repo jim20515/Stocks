@@ -2,7 +2,20 @@
 const { authHeaders } = useAuth()
 const { data: snapshots, refresh } = await useAuthFetch<any[]>('/api/portfolio/snapshot')
 
-const rows = computed(() => snapshots.value ?? [])
+const allRows = computed(() => snapshots.value ?? [])
+
+// 分頁
+const pageSize = 10
+const currentPage = ref(1)
+const totalPages = computed(() => Math.ceil(allRows.value.length / pageSize))
+const rows = computed(() => {
+  const start = (currentPage.value - 1) * pageSize
+  return allRows.value.slice(start, start + pageSize)
+})
+function goPage(p: number) {
+  if (p < 1 || p > totalPages.value) return
+  currentPage.value = p
+}
 
 function money(v: any) { return Number(v).toLocaleString('zh-TW') }
 function pct(v: any) {
@@ -82,7 +95,7 @@ async function runHistoryImport() {
     </div>
 
     <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
-      <div v-if="!rows.length" class="py-16 text-center text-sm text-slate-400">
+      <div v-if="!allRows.length" class="py-16 text-center text-sm text-slate-400">
         尚無記錄，點上方「匯入歷史資料」或等今日 14:35 自動存入
       </div>
 
@@ -118,6 +131,32 @@ async function runHistoryImport() {
             </tr>
           </tbody>
         </table>
+
+        <!-- 分頁 -->
+        <div v-if="totalPages > 1" class="flex items-center justify-between px-5 py-3 border-t border-slate-100">
+          <p class="text-xs text-slate-400">
+            共 {{ allRows.length }} 筆，第 {{ currentPage }} / {{ totalPages }} 頁
+          </p>
+          <div class="flex items-center gap-1">
+            <button @click="goPage(1)" :disabled="currentPage === 1"
+              class="px-2 py-1 text-xs rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition">«</button>
+            <button @click="goPage(currentPage - 1)" :disabled="currentPage === 1"
+              class="px-2 py-1 text-xs rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition">‹</button>
+            <template v-for="p in totalPages" :key="p">
+              <button v-if="Math.abs(p - currentPage) <= 2 || p === 1 || p === totalPages"
+                @click="goPage(p)"
+                class="px-3 py-1 text-xs rounded-lg transition font-medium"
+                :class="p === currentPage ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-100'">
+                {{ p }}
+              </button>
+              <span v-else-if="Math.abs(p - currentPage) === 3" class="px-1 text-slate-300 text-xs">…</span>
+            </template>
+            <button @click="goPage(currentPage + 1)" :disabled="currentPage === totalPages"
+              class="px-2 py-1 text-xs rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition">›</button>
+            <button @click="goPage(totalPages)" :disabled="currentPage === totalPages"
+              class="px-2 py-1 text-xs rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition">»</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
