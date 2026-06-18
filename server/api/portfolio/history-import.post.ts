@@ -7,14 +7,11 @@ export default defineEventHandler(async (event) => {
 
   if (!year || !month) throw createError({ statusCode: 400, message: '缺少 year / month 參數' })
 
-  const [{ data: holdings }, { data: settings }] = await Promise.all([
-    client.from('stock_holdings').select('*').eq('user_id', userId).order('buy_date'),
-    client.from('portfolio_settings').select('cash_amount').eq('user_id', userId).single(),
-  ])
+  const { data: holdings } = await client
+    .from('stock_holdings').select('*').eq('user_id', userId).order('buy_date')
 
   if (!holdings?.length) return { success: true, pricesInserted: 0, snapshotsInserted: 0, tradingDays: 0 }
 
-  const cashAmount = Number((settings as any)?.cash_amount ?? 0)
   const allCodes = [...new Set(holdings.map(h => h.stock_code.toUpperCase()))]
 
   const mm = String(month).padStart(2, '0')
@@ -135,18 +132,17 @@ export default defineEventHandler(async (event) => {
     return { success: true, pricesInserted, snapshotsInserted: 0, tradingDays: 0, debug: debugLog }
   }
 
-  // 取前一交易日收盤（作為 prevClose）
+  // 取前一交易日資料（上個月最後一筆快照）
   const { data: lastSnap } = await client
     .from('portfolio_daily_snapshot')
-    .select('total_value')
+    .select('date, total_value')
     .eq('user_id', userId)
     .lt('date', `${year}-${mm}-01`)
     .order('date', { ascending: false })
     .limit(1)
 
-  let prevTotalStock: number | null = lastSnap?.[0]
-    ? lastSnap[0].total_value - cashAmount
-    : null
+  let prevTotalStock: number | null = lastSnap?.[0]?.total_value ?? null
+  let prevTradingDay: string | null = lastSnap?.[0]?.date ?? null
 
   const snapshots: any[] = []
 
@@ -166,14 +162,38 @@ export default defineEventHandler(async (event) => {
       totalStock += price * netShares
     }
 
-    const totalValue = Math.round(totalStock) + cashAmount
-    const dailyChange = prevTotalStock !== null ? Math.round(totalStock - prevTotalStock) : 0
-    const dailyChangePct = prevTotalStock && prevTotalStock > 0
-      ? Math.round(dailyChange / prevTotalStock * 10000) / 100
-      : null
+    if (totalStock === 0) continue  // 當日無持股，略過
 
-    snapshots.push({ user_id: userId, date, total_value: totalValue, daily_change: dailyChange, daily_change_pct: dailyChangePct })
+    // 上一個交易日之後到今日之間的所有買賣（涵蓋週末/假日輸入的交易）
+    const todayTrades = holdings.filter(h =>
+      h.buy_date <= date && (prevTradingDay === null || h.buy_date > prevTradingDay)
+    )
+    const dailyTradeAmount = Math.round(todayTrades.reduce((s, h) => s + Math.abs(h.shares) * Number(h.average_cost), 0))
+
+    // 當日買賣對市值的影響（以成交價計算），用來還原純漲跌
+    // 用成交價才能保留買入當天從成交價漲到收盤價的獲利
+    let tradeMarketImpact = 0
+    for (const h of todayTrades) {
+      tradeMarketImpact += h.shares * Number(h.average_cost)
+    }
+
+    const totalValue = Math.round(totalStock)
+
+    let dailyChange: number
+    let dailyChangePct: number | null
+    if (prevTotalStock !== null) {
+      dailyChange = Math.round(totalStock - prevTotalStock - tradeMarketImpact)
+      dailyChangePct = prevTotalStock > 0 ? Math.round(dailyChange / prevTotalStock * 10000) / 100 : null
+    } else {
+      // 第一天：漲跌 = 收盤市值 - 成交金額
+      const purchaseCost = todayTrades.reduce((s, h) => s + h.shares * Number(h.average_cost), 0)
+      dailyChange = Math.round(totalStock - purchaseCost)
+      dailyChangePct = purchaseCost > 0 ? Math.round(dailyChange / purchaseCost * 10000) / 100 : null
+    }
+
+    snapshots.push({ user_id: userId, date, total_value: totalValue, daily_change: dailyChange, daily_change_pct: dailyChangePct, daily_trade_amount: dailyTradeAmount })
     prevTotalStock = totalStock
+    prevTradingDay = date
   }
 
   if (snapshots.length) {

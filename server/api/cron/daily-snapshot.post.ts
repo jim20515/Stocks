@@ -78,19 +78,30 @@ export default defineEventHandler(async (event) => {
         totalPrevValue += prevClose * netShares
       }
 
-      const cashAmount = Number((settings as any)?.cash_amount ?? 0)
-      totalValue = Math.round(totalValue) + cashAmount
-      const dailyChange = Math.round(totalValue - totalPrevValue - cashAmount)
+      if (codes.length === 0) continue  // 當日無持股，略過
+
+      totalValue = Math.round(totalValue)  // 不含現金，純股票市值
+
+      const todayTrades = (holdings ?? []).filter((h: any) => h.buy_date === today)
+      const dailyTradeAmount = Math.round(todayTrades.reduce((s: number, h: any) => s + Math.abs(h.shares) * Number(h.average_cost), 0))
+
+      // 扣除今日買賣對市值的影響（用成交價），保留買入當天的價差獲利
+      let tradeMarketImpact = 0
+      for (const h of todayTrades) {
+        tradeMarketImpact += h.shares * Number(h.average_cost)
+      }
+      const pureDailyChange = Math.round(totalValue - totalPrevValue - tradeMarketImpact)
       const dailyChangePct = totalPrevValue > 0
-        ? Math.round(dailyChange / totalPrevValue * 10000) / 100
+        ? Math.round(pureDailyChange / totalPrevValue * 10000) / 100
         : null
 
       await adminClient.from('portfolio_daily_snapshot').upsert({
         user_id: userId,
         date: today,
         total_value: totalValue,
-        daily_change: dailyChange,
+        daily_change: pureDailyChange,
         daily_change_pct: dailyChangePct,
+        daily_trade_amount: dailyTradeAmount,
       }, { onConflict: 'user_id,date' })
 
       results.push({ userId, success: true })
