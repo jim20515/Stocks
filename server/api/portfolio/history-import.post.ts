@@ -22,6 +22,8 @@ export default defineEventHandler(async (event) => {
 
   let pricesInserted = 0
   const debugLog: string[] = []
+  // 直接在記憶體中建 dayMap，不在 INSERT 後再 SELECT
+  const dayMap: Record<string, Record<string, number>> = {}
 
   for (const code of allCodes) {
     // 查 DB 這個月是否已有資料
@@ -34,6 +36,11 @@ export default defineEventHandler(async (event) => {
 
     if (existing?.length) {
       debugLog.push(`${code}: DB已有${existing.length}筆，跳過`)
+      // 已有資料也要加入 dayMap
+      for (const row of existing) {
+        if (!dayMap[row.date]) dayMap[row.date] = {}
+        dayMap[row.date][code] = Number(row.close_price)
+      }
       continue
     }
 
@@ -50,8 +57,7 @@ export default defineEventHandler(async (event) => {
       if (resp?.stat === 'OK' && resp.data?.length) {
         const toInsert: { stock_code: string; date: string; close_price: number }[] = []
         for (const row of resp.data) {
-          const dateRaw = row[0] as string  // 格式：115/02/03
-          // 收盤價：TWSE STOCK_DAY 欄位順序：日期,成交股數,成交金額,開盤,最高,最低,收盤,漲跌,筆數
+          const dateRaw = row[0] as string
           const close = parseFloat((row[6] as string).replace(/,/g, ''))
           if (isNaN(close) || close <= 0) continue
           const parts = dateRaw.split('/')
@@ -69,6 +75,11 @@ export default defineEventHandler(async (event) => {
             pricesInserted += toInsert.length
             fetched = true
             debugLog.push(`${code}: 寫入${toInsert.length}筆`)
+            // 寫入記憶體 dayMap
+            for (const r of toInsert) {
+              if (!dayMap[r.date]) dayMap[r.date] = {}
+              dayMap[r.date][code] = r.close_price
+            }
           }
         }
       }
@@ -105,6 +116,10 @@ export default defineEventHandler(async (event) => {
             } else {
               pricesInserted += toInsert.length
               debugLog.push(`${code} OTC: 寫入${toInsert.length}筆`)
+              for (const r of toInsert) {
+                if (!dayMap[r.date]) dayMap[r.date] = {}
+                dayMap[r.date][code] = r.close_price
+              }
             }
           }
         }
@@ -112,20 +127,6 @@ export default defineEventHandler(async (event) => {
         debugLog.push(`${code} OTC例外: ${e?.message ?? e}`)
       }
     }
-  }
-
-  // 讀取這個月所有交易日
-  const { data: allPricesThisMonth } = await client
-    .from('stock_daily_prices')
-    .select('stock_code, date, close_price')
-    .gte('date', `${year}-${mm}-01`)
-    .lte('date', `${year}-${mm}-31`)
-    .in('stock_code', allCodes)
-
-  const dayMap: Record<string, Record<string, number>> = {}
-  for (const row of allPricesThisMonth ?? []) {
-    if (!dayMap[row.date]) dayMap[row.date] = {}
-    dayMap[row.date][row.stock_code.toUpperCase()] = Number(row.close_price)
   }
 
   const tradingDays = Object.keys(dayMap).sort()
@@ -180,9 +181,12 @@ export default defineEventHandler(async (event) => {
       .upsert(snapshots, { onConflict: 'user_id,date' })
   }
 
+  const pricesTotal = Object.values(dayMap).reduce((s, v) => s + Object.keys(v).length, 0)
+
   return {
     success: true,
     pricesInserted,
+    pricesTotal,
     snapshotsInserted: snapshots.length,
     tradingDays: tradingDays.length,
     firstDay: tradingDays[0] ?? null,

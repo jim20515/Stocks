@@ -26,10 +26,11 @@ function pct(v: any) {
 
 // 歷史匯入進度
 const showModal = ref(false)
+const expandedLog = ref<string | null>(null)
 const importing = ref(false)
 const importDone = ref(false)
 const importError = ref('')
-const progressLog = ref<{ month: string; tradingDays: number; pricesInserted: number; status: 'pending' | 'running' | 'done' | 'error'; debugLog?: string[] }[]>([])
+const progressLog = ref<{ month: string; tradingDays: number; pricesInserted: number; pricesTotal: number; status: 'pending' | 'running' | 'done' | 'error'; debugLog?: string[] }[]>([])
 const currentMonthIdx = ref(0)
 
 function buildMonthList(): { year: number; month: number; label: string }[] {
@@ -62,7 +63,7 @@ async function runHistoryImport() {
   importDone.value = false
   importError.value = ''
   currentMonthIdx.value = 0
-  progressLog.value = months.map(m => ({ month: m.label, tradingDays: 0, pricesInserted: 0, status: 'pending' as const }))
+  progressLog.value = months.map(m => ({ month: m.label, tradingDays: 0, pricesInserted: 0, pricesTotal: 0, status: 'pending' as const }))
 
   for (let i = 0; i < months.length; i++) {
     currentMonthIdx.value = i
@@ -76,6 +77,7 @@ async function runHistoryImport() {
       })
       progressLog.value[i].tradingDays = res.tradingDays ?? 0
       progressLog.value[i].pricesInserted = res.pricesInserted ?? 0
+      progressLog.value[i].pricesTotal = res.pricesTotal ?? 0
       progressLog.value[i].debugLog = res.debug ?? []
       progressLog.value[i].status = 'done'
     } catch (e: any) {
@@ -141,25 +143,37 @@ async function runHistoryImport() {
         <!-- 月份列表 -->
         <div class="max-h-64 overflow-y-auto space-y-1.5 pr-1">
           <div v-for="(item, idx) in progressLog" :key="idx"
-            class="flex items-center justify-between px-3 py-2 rounded-lg text-xs"
+            class="px-3 py-2 rounded-lg text-xs"
             :class="item.status === 'running' ? 'bg-indigo-50 border border-indigo-200'
                   : item.status === 'done'    ? 'bg-slate-50'
                   : item.status === 'error'   ? 'bg-red-50'
                   : 'text-slate-300'">
-            <div class="flex items-center gap-2">
-              <span v-if="item.status === 'running'" class="w-3 h-3 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin inline-block"></span>
-              <span v-else-if="item.status === 'done'" class="text-green-500">✓</span>
-              <span v-else-if="item.status === 'error'" class="text-red-500">✗</span>
-              <span v-else class="w-3 h-3 rounded-full bg-slate-200 inline-block"></span>
-              <span :class="item.status === 'pending' ? 'text-slate-400' : 'text-slate-700'">{{ item.month }}</span>
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span v-if="item.status === 'running'" class="w-3 h-3 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin inline-block"></span>
+                <span v-else-if="item.status === 'done'" class="text-green-500">✓</span>
+                <span v-else-if="item.status === 'error'" class="text-red-500">✗</span>
+                <span v-else class="w-3 h-3 rounded-full bg-slate-200 inline-block"></span>
+                <span :class="item.status === 'pending' ? 'text-slate-400' : 'text-slate-700'">{{ item.month }}</span>
+              </div>
+              <span v-if="item.status === 'done'" class="text-slate-400">
+                {{ item.tradingDays }} 個交易日
+                <template v-if="item.pricesTotal > 0">
+                  　{{ item.pricesTotal }} 筆收盤價
+                  <span v-if="item.pricesInserted > 0" class="text-indigo-400">（新增 {{ item.pricesInserted }}）</span>
+                  <span v-else class="text-slate-300">（已有）</span>
+                </template>
+                <template v-else>　—</template>
+                <span v-if="item.debugLog?.length"
+                  class="ml-1 text-orange-400 cursor-pointer underline"
+                  @click="expandedLog = expandedLog === item.month ? null : item.month">詳細</span>
+              </span>
+              <span v-else-if="item.status === 'running'" class="text-indigo-500">抓取中…</span>
             </div>
-            <span v-if="item.status === 'done'" class="text-slate-400">
-              {{ item.tradingDays }} 個交易日　{{ item.pricesInserted }} 筆收盤價
-              <span v-if="item.tradingDays === 0 && item.debugLog?.length"
-                class="ml-1 text-orange-400 cursor-pointer underline"
-                :title="item.debugLog.join('\n')">詳細</span>
-            </span>
-            <span v-else-if="item.status === 'running'" class="text-indigo-500">抓取中…</span>
+            <div v-if="expandedLog === item.month && item.debugLog?.length"
+              class="mt-2 ml-5 text-xs text-slate-500 bg-white border border-slate-200 rounded-lg p-2 space-y-0.5">
+              <div v-for="(log, li) in item.debugLog" :key="li">{{ log }}</div>
+            </div>
           </div>
         </div>
 
