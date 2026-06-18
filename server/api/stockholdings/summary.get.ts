@@ -137,7 +137,7 @@ export default defineEventHandler(async (event) => {
   totalCost = Math.round(totalCost)
   totalValue = Math.round(totalValue)
 
-  // 今日漲跌（股票部位，不含現金）
+  // 今日漲跌（股票部位，不含現金），用 MIS 即時昨收計算
   const dailyChange = Math.round(totalValue - totalPrevValue)
   const dailyChangePct = totalPrevValue > 0
     ? Math.round(dailyChange / totalPrevValue * 10000) / 100
