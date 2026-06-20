@@ -1,18 +1,57 @@
 <script setup lang="ts">
 const { authHeaders } = useAuth()
+
+// Tooltip
+const tooltip = ref<{ text: string; x: number; y: number } | null>(null)
+function showTip(e: MouseEvent, text: string) {
+  // 估算 tooltip 寬度（每字約 7px + padding 20px）
+  const estimatedWidth = text.length * 7 + 20
+  const x = e.clientX + estimatedWidth + 10 > window.innerWidth
+    ? e.clientX - estimatedWidth - 10   // 超出右邊 → 往左顯示
+    : e.clientX + 10
+  const y = e.clientY - 36 < 0
+    ? e.clientY + 20                     // 超出頂部 → 往下顯示
+    : e.clientY - 36
+  tooltip.value = { text, x, y }
+}
+function hideTip() { tooltip.value = null }
 const { data: snapshots, refresh } = await useAuthFetch<any[]>('/api/portfolio/snapshot')
 const { data: holdings } = await useAuthFetch<any[]>('/api/stockholdings/summary', { key: 'daily-summary' })
 
 const allRows = computed(() => {
-  const raw = [...(snapshots.value ?? [])].reverse() // 由舊到新累加
-  let cumChange = 0
-  const withCum = raw.map(row => {
-    cumChange += Number(row.daily_change ?? 0)
-    const base = Number(row.total_value) - cumChange
-    const totalChangePct = base > 0 ? Math.round(cumChange / base * 10000) / 100 : null
-    return { ...row, total_change: cumChange, total_change_pct: totalChangePct }
+  const raw = [...(snapshots.value ?? [])].reverse() // 由舊到新
+
+  const withCalc = raw.map((row, i) => {
+    const totalValue = Number(row.total_value)
+    const totalCost  = Number(row.total_cost ?? 0)
+    const totalProfit = totalValue - totalCost  // 總漲跌
+
+    const prevRow = i > 0 ? raw[i - 1] : null
+    const prevValue = prevRow ? Number(prevRow.total_value) : null
+
+    // 當日漲跌 = 今日市值 - 昨日市值 - 當日買賣（排除資金進出，純反映股價漲跌）
+    const dailyTradeAmount = Number(row.daily_trade_amount ?? 0)
+    const dailyChange = prevValue !== null
+      ? Math.round(totalValue - prevValue - dailyTradeAmount)
+      : null
+    const dailyChangePct = (dailyChange !== null && prevValue && prevValue > 0)
+      ? Math.round(dailyChange / prevValue * 10000) / 100
+      : null
+    const totalProfitPct = totalCost > 0
+      ? Math.round(totalProfit / totalCost * 10000) / 100
+      : null
+
+    return { ...row, total_profit: totalProfit, daily_change: dailyChange, daily_change_pct: dailyChangePct, total_profit_pct: totalProfitPct, cum_profit: 0 }
   })
-  return withCum.reverse() // 恢復由新到舊顯示
+
+  // 累積獲利 = 每日漲跌的累積加總
+  let cumProfit = 0
+  for (const row of withCalc) {
+    cumProfit += row.daily_change ?? 0
+    row.cum_profit = Math.round(cumProfit)
+  }
+
+  return withCalc.reverse() // 由新到舊顯示
 })
 
 // 分頁
@@ -207,11 +246,37 @@ async function runHistoryImport() {
             <tr class="bg-slate-50 border-b border-slate-100">
               <th class="text-left px-5 py-3 text-xs font-medium text-slate-500">日期</th>
               <th class="text-right px-5 py-3 text-xs font-medium text-slate-500">總市值</th>
+              <th class="text-right px-5 py-3 text-xs font-medium text-slate-500">
+                <span class="inline-flex items-center gap-1 justify-end">總成本
+                  <span class="formula-tip" @mouseover="showTip($event, '買入＋買入金額，賣出−當時均成本（WACC）')" @mouseleave="hideTip">?</span>
+                </span>
+              </th>
               <th class="text-right px-5 py-3 text-xs font-medium text-slate-500">當日買賣</th>
-              <th class="text-right px-5 py-3 text-xs font-medium text-slate-500">當日漲跌</th>
-              <th class="text-right px-5 py-3 text-xs font-medium text-slate-500">漲跌幅</th>
-              <th class="text-right px-5 py-3 text-xs font-medium text-slate-500">總漲跌</th>
-              <th class="text-right px-5 py-3 text-xs font-medium text-slate-500">總漲跌幅</th>
+              <th class="text-right px-5 py-3 text-xs font-medium text-slate-500">
+                <span class="inline-flex items-center gap-1 justify-end">當日漲跌
+                  <span class="formula-tip" @mouseover="showTip($event, '今日市值 − 昨日市值 − 當日買賣（純股價漲跌，不含資金進出）')" @mouseleave="hideTip">?</span>
+                </span>
+              </th>
+              <th class="text-right px-5 py-3 text-xs font-medium text-slate-500">
+                <span class="inline-flex items-center gap-1 justify-end">漲跌幅
+                  <span class="formula-tip" @mouseover="showTip($event, '當日漲跌 ÷ 昨日總市值 × 100%')" @mouseleave="hideTip">?</span>
+                </span>
+              </th>
+              <th class="text-right px-5 py-3 text-xs font-medium text-slate-500">
+                <span class="inline-flex items-center gap-1 justify-end">總漲跌
+                  <span class="formula-tip" @mouseover="showTip($event, '總市值 − 總成本（含未實現＋已實現損益）')" @mouseleave="hideTip">?</span>
+                </span>
+              </th>
+              <th class="text-right px-5 py-3 text-xs font-medium text-slate-500">
+                <span class="inline-flex items-center gap-1 justify-end">總漲跌幅
+                  <span class="formula-tip" @mouseover="showTip($event, '總漲跌 ÷ 總成本 × 100%')" @mouseleave="hideTip">?</span>
+                </span>
+              </th>
+              <th class="text-right px-5 py-3 text-xs font-medium text-slate-500">
+                <span class="inline-flex items-center gap-1 justify-end">累積獲利
+                  <span class="formula-tip" @mouseover="showTip($event, '每日漲跌的累積加總（純股價漲跌貢獻）')" @mouseleave="hideTip">?</span>
+                </span>
+              </th>
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-50">
@@ -221,12 +286,16 @@ async function runHistoryImport() {
               <td class="px-5 py-3.5 text-right font-semibold text-slate-800">
                 {{ money(row.total_value) }}
               </td>
-              <td class="px-5 py-3.5 text-right text-slate-500">
-                {{ row.daily_trade_amount > 0 ? money(row.daily_trade_amount) : '—' }}
+              <td class="px-5 py-3.5 text-right text-slate-600">
+                {{ money(row.total_cost) }}
+              </td>
+              <td class="px-5 py-3.5 text-right font-semibold"
+                :class="row.daily_trade_amount > 0 ? 'text-red-500' : row.daily_trade_amount < 0 ? 'text-green-600' : 'text-slate-400'">
+                {{ row.daily_trade_amount !== 0 ? (row.daily_trade_amount > 0 ? '+' : '') + money(row.daily_trade_amount) : '—' }}
               </td>
               <td class="px-5 py-3.5 text-right font-semibold"
                 :class="row.daily_change > 0 ? 'text-red-500' : row.daily_change < 0 ? 'text-green-600' : 'text-slate-400'">
-                {{ row.daily_change > 0 ? '+' : '' }}{{ money(row.daily_change) }}
+                {{ row.daily_change !== null ? (row.daily_change > 0 ? '+' : '') + money(row.daily_change) : '—' }}
               </td>
               <td class="px-5 py-3.5 text-right">
                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
@@ -237,16 +306,20 @@ async function runHistoryImport() {
                 </span>
               </td>
               <td class="px-5 py-3.5 text-right font-semibold"
-                :class="row.total_change > 0 ? 'text-red-500' : row.total_change < 0 ? 'text-green-600' : 'text-slate-400'">
-                {{ row.total_change > 0 ? '+' : '' }}{{ money(row.total_change) }}
+                :class="row.total_profit > 0 ? 'text-red-500' : row.total_profit < 0 ? 'text-green-600' : 'text-slate-400'">
+                {{ row.total_profit > 0 ? '+' : '' }}{{ money(row.total_profit) }}
               </td>
               <td class="px-5 py-3.5 text-right">
                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
-                  :class="row.total_change_pct > 0 ? 'bg-red-50 text-red-600'
-                        : row.total_change_pct < 0 ? 'bg-green-50 text-green-700'
+                  :class="row.total_profit_pct > 0 ? 'bg-red-50 text-red-600'
+                        : row.total_profit_pct < 0 ? 'bg-green-50 text-green-700'
                         : 'bg-slate-100 text-slate-500'">
-                  {{ pct(row.total_change_pct) }}
+                  {{ pct(row.total_profit_pct) }}
                 </span>
+              </td>
+              <td class="px-5 py-3.5 text-right font-semibold"
+                :class="row.cum_profit > 0 ? 'text-red-500' : row.cum_profit < 0 ? 'text-green-600' : 'text-slate-400'">
+                {{ row.cum_profit > 0 ? '+' : '' }}{{ money(row.cum_profit) }}
               </td>
             </tr>
           </tbody>
@@ -280,4 +353,28 @@ async function runHistoryImport() {
       </div>
     </div>
   </div>
+
+  <Teleport to="body">
+    <div v-if="tooltip" class="fixed z-[9999] pointer-events-none px-2.5 py-1.5 bg-slate-800 text-slate-100 text-xs rounded-lg shadow-lg whitespace-nowrap"
+      :style="{ left: tooltip.x + 'px', top: tooltip.y + 'px' }">
+      {{ tooltip.text }}
+    </div>
+  </Teleport>
 </template>
+
+<style scoped>
+.formula-tip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #6366f1;
+  color: white;
+  font-size: 9px;
+  font-weight: 700;
+  cursor: help;
+  flex-shrink: 0;
+}
+</style>

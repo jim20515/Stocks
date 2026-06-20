@@ -132,67 +132,90 @@ export default defineEventHandler(async (event) => {
     return { success: true, pricesInserted, snapshotsInserted: 0, tradingDays: 0, debug: debugLog }
   }
 
-  // 取前一交易日資料（上個月最後一筆快照）
-  const { data: lastSnap } = await client
+  // 取上個月最後一筆快照
+  const { data: lastSnapArr } = await client
     .from('portfolio_daily_snapshot')
-    .select('date, total_value')
+    .select('date, total_cost')
     .eq('user_id', userId)
     .lt('date', `${year}-${mm}-01`)
     .order('date', { ascending: false })
     .limit(1)
+  const lastSnap = lastSnapArr?.[0] ?? null
 
-  let prevTotalStock: number | null = lastSnap?.[0]?.total_value ?? null
-  let prevTradingDay: string | null = lastSnap?.[0]?.date ?? null
+  let prevTradingDay: string | null = lastSnap?.date ?? null
+
+  // Rolling WACC：初始化到上個月為止的所有交易
+  const waccMap: Record<string, { totalCost: number; totalShares: number }> = {}
+  for (const h of holdings.filter(h => !prevTradingDay || h.buy_date <= prevTradingDay)) {
+    const code = h.stock_code.toUpperCase()
+    if (!waccMap[code]) waccMap[code] = { totalCost: 0, totalShares: 0 }
+    if (h.shares > 0) {
+      waccMap[code].totalCost += h.shares * Number(h.average_cost)
+      waccMap[code].totalShares += h.shares
+    } else {
+      const wacc = waccMap[code].totalShares > 0
+        ? waccMap[code].totalCost / waccMap[code].totalShares
+        : Number(h.average_cost)
+      const abs = Math.abs(h.shares)
+      waccMap[code].totalCost = Math.max(0, waccMap[code].totalCost - wacc * abs)
+      waccMap[code].totalShares = Math.max(0, waccMap[code].totalShares - abs)
+    }
+  }
+  let runningTotalCost = lastSnap?.total_cost ?? 0
 
   const snapshots: any[] = []
 
   for (const date of tradingDays) {
-    const activeHoldings = holdings.filter(h => h.buy_date <= date)
+    // 計算當日淨持股市值
     const netMap: Record<string, number> = {}
-    for (const h of activeHoldings) {
+    for (const h of holdings.filter(h => h.buy_date <= date)) {
       const code = h.stock_code.toUpperCase()
       netMap[code] = (netMap[code] ?? 0) + h.shares
     }
-
     let totalStock = 0
     for (const [code, netShares] of Object.entries(netMap)) {
       if (netShares <= 0) continue
       const price = dayMap[date]?.[code]
-      if (price == null) continue
-      totalStock += price * netShares
+      if (price != null) totalStock += price * netShares
     }
+    if (totalStock === 0) continue
 
-    if (totalStock === 0) continue  // 當日無持股，略過
-
-    // 上一個交易日之後到今日之間的所有買賣（涵蓋週末/假日輸入的交易）
+    // 今日（含假日順延）的所有交易
     const todayTrades = holdings.filter(h =>
-      h.buy_date <= date && (prevTradingDay === null || h.buy_date > prevTradingDay)
+      h.buy_date <= date && (!prevTradingDay || h.buy_date > prevTradingDay)
     )
-    const dailyTradeAmount = Math.round(todayTrades.reduce((s, h) => s + Math.abs(h.shares) * Number(h.average_cost), 0))
 
-    // 當日買賣對市值的影響（以成交價計算），用來還原純漲跌
-    // 用成交價才能保留買入當天從成交價漲到收盤價的獲利
-    let tradeMarketImpact = 0
+    // 更新 rolling WACC，計算 total_cost 與 daily_trade_amount
+    let dailyTradeAmount = 0
     for (const h of todayTrades) {
-      tradeMarketImpact += h.shares * Number(h.average_cost)
+      const code = h.stock_code.toUpperCase()
+      if (!waccMap[code]) waccMap[code] = { totalCost: 0, totalShares: 0 }
+      if (h.shares > 0) {
+        const cost = h.shares * Number(h.average_cost)
+        waccMap[code].totalCost += cost
+        waccMap[code].totalShares += h.shares
+        runningTotalCost += cost          // 買入：加買入金額
+        dailyTradeAmount += cost
+      } else {
+        const wacc = waccMap[code].totalShares > 0
+          ? waccMap[code].totalCost / waccMap[code].totalShares
+          : Number(h.average_cost)
+        const abs = Math.abs(h.shares)
+        const costBasis = wacc * abs
+        waccMap[code].totalCost = Math.max(0, waccMap[code].totalCost - costBasis)
+        waccMap[code].totalShares = Math.max(0, waccMap[code].totalShares - abs)
+        runningTotalCost -= costBasis     // 賣出：扣均成本
+        dailyTradeAmount += h.shares * Number(h.average_cost)  // h.shares 為負，結果為負數
+      }
     }
 
-    const totalValue = Math.round(totalStock)
-
-    let dailyChange: number
-    let dailyChangePct: number | null
-    if (prevTotalStock !== null) {
-      dailyChange = Math.round(totalStock - prevTotalStock - tradeMarketImpact)
-      dailyChangePct = prevTotalStock > 0 ? Math.round(dailyChange / prevTotalStock * 10000) / 100 : null
-    } else {
-      // 第一天：漲跌 = 收盤市值 - 成交金額
-      const purchaseCost = todayTrades.reduce((s, h) => s + h.shares * Number(h.average_cost), 0)
-      dailyChange = Math.round(totalStock - purchaseCost)
-      dailyChangePct = purchaseCost > 0 ? Math.round(dailyChange / purchaseCost * 10000) / 100 : null
-    }
-
-    snapshots.push({ user_id: userId, date, total_value: totalValue, daily_change: dailyChange, daily_change_pct: dailyChangePct, daily_trade_amount: dailyTradeAmount })
-    prevTotalStock = totalStock
+    snapshots.push({
+      user_id: userId,
+      date,
+      total_value: Math.round(totalStock),
+      total_cost: Math.round(runningTotalCost),
+      daily_trade_amount: Math.round(dailyTradeAmount),
+    })
     prevTradingDay = date
   }
 

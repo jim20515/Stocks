@@ -83,7 +83,7 @@ export default defineEventHandler(async (event) => {
       totalValue = Math.round(totalValue)  // 不含現金，純股票市值
 
       const todayTrades = (holdings ?? []).filter((h: any) => h.buy_date === today)
-      const dailyTradeAmount = Math.round(todayTrades.reduce((s: number, h: any) => s + Math.abs(h.shares) * Number(h.average_cost), 0))
+      const dailyTradeAmount = Math.round(todayTrades.reduce((s: number, h: any) => s + h.shares * Number(h.average_cost), 0))
 
       // 扣除今日買賣對市值的影響（用成交價），保留買入當天的價差獲利
       let tradeMarketImpact = 0
