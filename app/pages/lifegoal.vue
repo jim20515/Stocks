@@ -146,7 +146,13 @@ const milestones = computed(() => {
                 <th class="text-left px-5 py-3 text-xs font-medium text-slate-500">年份</th>
                 <th class="text-right px-4 py-3 text-xs font-medium text-slate-500">年齡</th>
                 <th class="text-right px-5 py-3 text-xs font-medium text-slate-500">預估總資產</th>
-                <th class="px-5 py-3 text-xs font-medium text-slate-500 w-48"></th>
+                <th class="px-5 py-3 w-56">
+                  <div class="flex items-center gap-3 text-xs text-slate-400 font-normal">
+                    <span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 rounded-sm bg-blue-400"></span>起始</span>
+                    <span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 rounded-sm bg-green-400"></span>投入</span>
+                    <span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 rounded-sm bg-red-400"></span>獲利</span>
+                  </div>
+                </th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-50">
@@ -168,10 +174,13 @@ const milestones = computed(() => {
                   <span class="ml-2 text-xs text-slate-400">{{ money(row.assets) }}</span>
                 </td>
                 <td class="px-5 py-3">
-                  <div class="h-2 bg-slate-100 rounded-full overflow-hidden">
-                    <div class="h-full bg-indigo-400 rounded-full transition-all duration-500"
-                      :style="{ width: Math.min(100, (row.assets / projection.rows[projection.rows.length-1].assets) * 100) + '%' }">
-                    </div>
+                  <div class="h-3 rounded-full overflow-hidden flex">
+                    <div class="h-full bg-blue-400 transition-all duration-500"
+                      :style="{ width: (row.starting / row.assets * 100) + '%' }"></div>
+                    <div class="h-full bg-green-400 transition-all duration-500"
+                      :style="{ width: (row.contributions / row.assets * 100) + '%' }"></div>
+                    <div class="h-full bg-red-400 transition-all duration-500"
+                      :style="{ width: (row.interest / row.assets * 100) + '%' }"></div>
                   </div>
                 </td>
               </tr>

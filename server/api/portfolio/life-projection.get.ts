@@ -26,12 +26,21 @@ export default defineEventHandler(async (event) => {
   const endYear = startInvestYear + (90 - initialAge)
 
   let assets = initialAmount
+  let totalContrib = 0
   const rows = []
 
   for (let year = startInvestYear; year <= endYear; year++) {
     const age = initialAge + (year - startInvestYear)
-    rows.push({ year, age, assets: Math.round(assets) })
+    const interest = Math.round(assets - initialAmount - totalContrib)
+    rows.push({
+      year, age,
+      assets: Math.round(assets),
+      starting: initialAmount,
+      contributions: Math.round(totalContrib),
+      interest: Math.max(0, interest),
+    })
     const contribution = year < stopYear ? contrib : 0
+    totalContrib += contribution
     assets = (assets + contribution) * (1 + rate)
   }
 
