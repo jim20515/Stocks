@@ -83,7 +83,7 @@ const editingId = ref<number | null>(null)
 const lookingUp = ref(false)
 const lookupError = ref('')
 
-const form = ref({ stockCode: '', stockName: '', shares: '', averageCost: '', costBasis: '', buyDate: today(), leverageMultiplier: 1, watermarkPrice: '', tradeType: 'buy' as 'buy' | 'sell' })
+const form = ref({ stockCode: '', stockName: '', shares: '', averageCost: '', costBasis: '', buyDate: today(), leverageMultiplier: 1, watermarkPrice: '', tradeType: 'buy' as 'buy' | 'sell', account: '' })
 
 const refreshKey = useState('portfolioRefreshKey', () => 0)
 
@@ -101,6 +101,7 @@ provide('openEditModal', (holding: any) => {
     leverageMultiplier: holding.leverageMultiplier ?? 1,
     watermarkPrice: holding.watermarkPrice ?? '',
     tradeType: isSell ? 'sell' : 'buy',
+    account: holding.account ?? '',
   }
   lookupError.value = ''
   showModal.value = true
@@ -117,7 +118,7 @@ function openModal() {
 function closeModal() {
   showModal.value = false
   editingId.value = null
-  form.value = { stockCode: '', stockName: '', shares: '', averageCost: '', buyDate: today(), leverageMultiplier: 1, watermarkPrice: '', tradeType: 'buy' }
+  form.value = { stockCode: '', stockName: '', shares: '', averageCost: '', costBasis: '', buyDate: today(), leverageMultiplier: 1, watermarkPrice: '', tradeType: 'buy', account: '' }
   lookupError.value = ''
 }
 
@@ -172,6 +173,7 @@ async function submitForm() {
     buyDate: form.value.buyDate,
     leverageMultiplier: Number(form.value.leverageMultiplier),
     watermarkPrice: form.value.watermarkPrice ? Number(form.value.watermarkPrice) : null,
+    account: form.value.account?.trim() || null,
   }
   if (editingId.value) {
     await ($authFetch as any)(`/api/stockholdings/${editingId.value}`, { method: 'PUT', body: payload })
@@ -355,6 +357,11 @@ async function submitForm() {
             <div>
               <label class="block text-xs font-medium text-slate-600 mb-1.5">交易日期</label>
               <input v-model="form.buyDate" type="date"
+                class="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1.5">帳戶（選填）</label>
+              <input v-model="form.account" type="text" placeholder="例：板橋富邦、永豐..."
                 class="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300" />
             </div>
           </div>

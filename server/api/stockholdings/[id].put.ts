@@ -7,7 +7,7 @@ export default defineEventHandler(async (event) => {
   if (!id || isNaN(id)) throw createError({ statusCode: 400, message: '無效的 ID' })
 
   const body = await readBody(event)
-  const { stockCode, stockName, shares, averageCost, buyDate, leverageMultiplier, watermarkPrice } = body ?? {}
+  const { stockCode, stockName, shares, averageCost, buyDate, leverageMultiplier, watermarkPrice, account } = body ?? {}
 
   const { data, error } = await client
     .from('stock_holdings')
@@ -19,6 +19,7 @@ export default defineEventHandler(async (event) => {
       buy_date: buyDate,
       leverage_multiplier: Number(leverageMultiplier ?? 1),
       watermark_price: watermarkPrice ? Number(watermarkPrice) : null,
+      account: account?.trim() || null,
     })
     .eq('id', id)
     .eq('user_id', userId)

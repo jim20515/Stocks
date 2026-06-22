@@ -286,7 +286,10 @@ async function refreshPrices() {
                   {{ h.profitPct > 0 ? '+' : '' }}{{ h.profitPct }}%
                 </span>
               </td>
-              <td class="px-4 py-3.5 text-slate-500 text-xs">{{ h.buyDate }}</td>
+              <td class="px-4 py-3.5 text-slate-500 text-xs">
+                {{ h.buyDate }}
+                <span v-if="h.account" class="block mt-0.5 text-indigo-400">{{ h.account }}</span>
+              </td>
               <td class="px-4 py-3.5">
                 <div class="flex items-center gap-2 justify-end">
                   <button @click="openEditModal(h)"
