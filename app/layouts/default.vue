@@ -512,6 +512,7 @@ async function submitForm() {
                 <option value="">不指定</option>
                 <option v-for="acc in (accountList ?? [])" :key="acc.id" :value="acc.name">{{ acc.name }}</option>
               </select>
+              <p class="text-xs text-slate-400 mt-1.5">選擇帳戶會讓總成本在賣出的時候分別帳戶計算</p>
             </div>
           </div>
 
