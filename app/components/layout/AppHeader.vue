@@ -15,6 +15,15 @@ const pageTitle = computed(() => titleMap[route.path] ?? '股票看板')
 const today = computed(() =>
   new Date().toLocaleDateString('zh-TW', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })
 )
+
+const tooltip = ref<{ text: string; x: number; y: number } | null>(null)
+
+function showTip(e: MouseEvent, text: string) {
+  const el = e.currentTarget as HTMLElement
+  const rect = el.getBoundingClientRect()
+  tooltip.value = { text, x: rect.left + rect.width / 2, y: rect.bottom + window.scrollY + 8 }
+}
+function hideTip() { tooltip.value = null }
 </script>
 
 <template>
@@ -48,18 +57,15 @@ const today = computed(() =>
             </svg>
           </button>
           <!-- 桌面版：顯示文字 -->
-          <div class="relative group hidden sm:block">
-            <button @click="emit('import')"
-              class="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-600 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors">
-              <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-              </svg>
-              匯入 XLS
-            </button>
-            <div class="absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 z-[9999] hidden group-hover:block bg-slate-800 text-slate-100 text-xs rounded-lg px-2.5 py-1.5 whitespace-nowrap shadow-lg pointer-events-none">
-              目前系統支援富邦對帳單
-            </div>
-          </div>
+          <button @click="emit('import')"
+            @mouseenter="showTip($event, '目前系統支援富邦對帳單')"
+            @mouseleave="hideTip"
+            class="hidden sm:flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-600 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors">
+            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+            </svg>
+            匯入 XLS
+          </button>
           <button @click="emit('add')"
             class="hidden sm:flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors">
             <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -82,4 +88,12 @@ const today = computed(() =>
       </div>
     </div>
   </header>
+
+  <Teleport to="body">
+    <div v-if="tooltip"
+      class="fixed z-[9999] pointer-events-none px-2.5 py-1.5 bg-slate-800 text-slate-100 text-xs rounded-lg shadow-lg whitespace-nowrap -translate-x-1/2"
+      :style="{ left: tooltip.x + 'px', top: tooltip.y + 'px' }">
+      {{ tooltip.text }}
+    </div>
+  </Teleport>
 </template>
