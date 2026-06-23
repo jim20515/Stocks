@@ -21,7 +21,7 @@ const tooltip = ref<{ text: string; x: number; y: number } | null>(null)
 function showTip(e: MouseEvent, text: string) {
   const el = e.currentTarget as HTMLElement
   const rect = el.getBoundingClientRect()
-  tooltip.value = { text, x: rect.left + rect.width / 2, y: rect.bottom + window.scrollY + 8 }
+  tooltip.value = { text, x: rect.left + rect.width / 2, y: rect.bottom + 8 }
 }
 function hideTip() { tooltip.value = null }
 </script>
