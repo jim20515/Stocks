@@ -51,6 +51,7 @@ const allItems = computed(() => (summary.value as any)?.items ?? [])
 const items = computed(() => {
   const map: Record<string, any> = {}
   for (const h of allItems.value) {
+    if (h.isRealized) continue  // 只顯示未實現持股
     if (!map[h.stockCode]) {
       map[h.stockCode] = { ...h, shares: 0, cost: 0, value: 0, profit: 0 }
     }
