@@ -318,7 +318,7 @@ async function submitForm() {
     </div>
 
     <!-- 隱藏的 XLS 檔案輸入 -->
-    <input ref="xlsFileInput" type="file" accept=".xls,.xlsx" class="hidden" @change="onXlsSelected" />
+    <input ref="xlsFileInput" type="file" accept=".xls,.xlsx,.csv" class="hidden" @change="onXlsSelected" />
 
     <!-- AI 偵測中 / 錯誤提示 -->
     <Teleport to="body">
