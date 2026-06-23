@@ -293,7 +293,16 @@ async function submitForm() {
           <!-- 股票代號篩選 + 帳戶選擇 -->
           <div class="px-5 py-3 border-b border-slate-100 shrink-0 space-y-3">
             <div>
-              <p class="text-xs font-medium text-slate-500 mb-2">選擇要匯入的股票（勾選 = 匯入）</p>
+              <div class="flex items-center justify-between mb-2">
+                <p class="text-xs font-medium text-slate-500">選擇要匯入的股票（勾選 = 匯入）</p>
+                <div class="flex gap-2">
+                  <button @click="importFilterCodes = new Set(importPreview.map((r: any) => r.stockCode))"
+                    class="text-xs text-indigo-500 hover:text-indigo-700 transition">全選</button>
+                  <span class="text-slate-300">|</span>
+                  <button @click="importFilterCodes = new Set()"
+                    class="text-xs text-slate-400 hover:text-slate-600 transition">全部取消</button>
+                </div>
+              </div>
               <div class="flex flex-wrap gap-2">
                 <label v-for="code in [...new Set(importPreview.map((r: any) => r.stockCode))]" :key="code"
                   class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border cursor-pointer select-none transition text-xs font-medium"
