@@ -45,27 +45,12 @@ const statCards = computed(() => {
   ]
 })
 
-const allItems = computed(() => (summary.value as any)?.items ?? [])
-
-// 依股票代號加總
+// 使用 API 回傳的 byCode（WACC-based 淨持股加總）
 const items = computed(() => {
-  const map: Record<string, any> = {}
-  for (const h of allItems.value) {
-    if (h.isRealized) continue  // 只顯示未實現持股
-    if (!map[h.stockCode]) {
-      map[h.stockCode] = { ...h, shares: 0, cost: 0, value: 0, profit: 0 }
-    }
-    map[h.stockCode].shares += h.shares
-    map[h.stockCode].cost += h.cost
-    map[h.stockCode].value += h.value
-    map[h.stockCode].profit += h.profit
-  }
-  return Object.values(map)
-    .filter(h => h.shares > 0)
-    .map(h => ({
-      ...h,
-      profitPct: h.cost > 0 && h.value > 0 ? Math.round((h.profit / h.cost) * 10000) / 100 : 0,
-    }))
+  return ((summary.value as any)?.byCode ?? []).map((h: any) => ({
+    ...h,
+    profitPct: h.cost > 0 && h.value > 0 ? Math.round((h.profit / h.cost) * 10000) / 100 : 0,
+  }))
 })
 
 function pct(h: any) {

@@ -140,8 +140,31 @@ export default defineEventHandler(async (event) => {
     : 0
   const totalRealizedProfit = items.filter(i => i.isRealized).reduce((s, i) => s + i.profit, 0)
 
+  // 按代號加總淨持股（跨帳戶合併，使用 WACC-based cost）
+  const byCodeMap: Record<string, { stockCode: string; stockName: string; shares: number; cost: number; value: number; profit: number; dailyChangePct: number | null }> = {}
+  for (const codeMap of Object.values(runningMap)) {
+    for (const [code, { totalCost: cost, totalShares: shares }] of Object.entries(codeMap)) {
+      if (shares <= 0) continue
+      const wacc = cost / shares
+      const info = priceInfos[code]
+      const price = info?.price ?? wacc
+      const value = Math.round(price * shares)
+      const costRounded = Math.round(wacc * shares)
+      if (!byCodeMap[code]) {
+        const sample = items.find(i => i.stockCode.toUpperCase() === code)
+        byCodeMap[code] = { stockCode: code, stockName: sample?.stockName ?? code, shares: 0, cost: 0, value: 0, profit: 0, dailyChangePct: info?.changePct ?? null }
+      }
+      byCodeMap[code].shares += shares
+      byCodeMap[code].cost += costRounded
+      byCodeMap[code].value += value
+      byCodeMap[code].profit += value - costRounded
+    }
+  }
+  const byCode = Object.values(byCodeMap)
+
   return {
     items,
+    byCode,
     cashAmount,
     totalCost,
     totalValue,
