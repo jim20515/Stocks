@@ -56,7 +56,7 @@ function hideTip() { tooltip.value = null }
           </button>
           <!-- 桌面版：顯示文字 -->
           <button @click="emit('import')"
-            @mouseenter="showTip($event, '目前系統支援富邦對帳單')"
+            @mouseenter="showTip($event, '目前支援富邦、國泰對帳單')"
             @mouseleave="hideTip"
             class="hidden sm:flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-600 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors">
             <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
