@@ -16,6 +16,25 @@ const importAccount = ref('')
 const detecting = ref(false)
 const detectError = ref('')
 
+function detectMapping(keys: string[]) {
+  const find = (...kws: string[]) => keys.find(k => kws.some(kw => k.includes(kw))) ?? null
+  const dateKey   = find('日期', 'date', 'Date')
+  const typeKey   = find('類別', '類型', '買賣', 'type', 'Type', '交易')
+  const nameKey   = find('名稱', '股票', 'name', 'Name', '商品')
+  const sharesKey = find('股數', '數量', '張數', 'shares', 'qty', 'Qty', '成交量')
+  const priceKey  = find('單價', '價格', '成交價', 'price', 'Price', '均價')
+  const codeKey   = find('代號', '代碼', 'code', 'Code', '股號')
+
+  // 買/賣關鍵字
+  const buyKeyword  = '買'
+  const sellKeyword = '賣'
+
+  // 判斷日期格式
+  const dateFormat = '民國'  // 預設嘗試民國轉換，toDate() 會自動判斷
+
+  return { dateKey, typeKey, nameKey, sharesKey, priceKey, codeKey, buyKeyword, sellKeyword, dateFormat, codeInName: !codeKey }
+}
+
 function triggerImport() {
   xlsFileInput.value?.click()
 }
@@ -79,13 +98,14 @@ async function parseWithAI(file: File) {
   const rawRows = await parseRawRows(file)
   if (!rawRows.length) { detectError.value = '檔案無資料'; return }
 
-  // 呼叫 AI 偵測欄位對應
-  const mapping = await ($authFetch as any)('/api/import/detect', {
-    method: 'POST',
-    body: { rows: rawRows.slice(0, 5) },
-  })
-
+  const keys = Object.keys(rawRows[0] ?? {})
+  const mapping = detectMapping(keys)
   const { dateKey, typeKey, nameKey, sharesKey, priceKey, buyKeyword, sellKeyword, codeInName, codeKey, dateFormat } = mapping
+
+  if (!dateKey || !nameKey || !sharesKey || !priceKey) {
+    detectError.value = `無法自動識別欄位（找到：${keys.join('、')}）`
+    return
+  }
 
   const rows = rawRows.map(r => {
     const dateRaw = String(r[dateKey] ?? '')
