@@ -12,6 +12,7 @@ const showImportModal = ref(false)
 const importPreview = ref<any[]>([])
 const importing = ref(false)
 const pendingFile = ref<File | null>(null)
+const importFilterCodes = ref<Set<string>>(new Set())
 
 function triggerImport() {
   xlsFileInput.value?.click()
@@ -93,15 +94,17 @@ async function parseAsFubon() {
     }
   })
 
+  importFilterCodes.value = new Set(importPreview.value.map((r: any) => r.stockCode))
   showImportModal.value = true
 }
 
 async function confirmImport() {
   importing.value = true
   try {
+    const filtered = importPreview.value.filter((r: any) => importFilterCodes.value.has(r.stockCode))
     await ($authFetch as any)('/api/stockholdings/import', {
       method: 'POST',
-      body: { items: importPreview.value },
+      body: { items: filtered },
     })
     refreshKey.value++
     showImportModal.value = false
@@ -283,6 +286,21 @@ async function submitForm() {
             </button>
           </div>
 
+          <!-- 股票代號篩選 -->
+          <div class="px-5 py-3 border-b border-slate-100 shrink-0">
+            <p class="text-xs font-medium text-slate-500 mb-2">選擇要匯入的股票（勾選 = 匯入）</p>
+            <div class="flex flex-wrap gap-2">
+              <label v-for="code in [...new Set(importPreview.map((r: any) => r.stockCode))]" :key="code"
+                class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border cursor-pointer select-none transition text-xs font-medium"
+                :class="importFilterCodes.has(code) ? 'border-indigo-300 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-400'">
+                <input type="checkbox" class="hidden"
+                  :checked="importFilterCodes.has(code)"
+                  @change="importFilterCodes.has(code) ? importFilterCodes.delete(code) : importFilterCodes.add(code); importFilterCodes = new Set(importFilterCodes)" />
+                {{ code }}
+              </label>
+            </div>
+          </div>
+
           <div class="overflow-auto flex-1">
             <table class="w-full text-sm">
               <thead class="sticky top-0 bg-slate-50">
@@ -297,7 +315,7 @@ async function submitForm() {
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-50">
-                <tr v-for="(h, i) in importPreview" :key="i"
+                <tr v-for="(h, i) in importPreview.filter((r: any) => importFilterCodes.has(r.stockCode))" :key="i"
                   :class="h.shares < 0 ? 'bg-green-50/40' : 'hover:bg-slate-50/50'">
                   <td class="px-5 py-2.5 text-slate-500 text-xs">{{ h.buyDate }}</td>
                   <td class="px-4 py-2.5 text-center">
@@ -333,7 +351,7 @@ async function submitForm() {
             </button>
             <button @click="confirmImport" :disabled="importing"
               class="flex-1 px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition disabled:opacity-50">
-              {{ importing ? '匯入中…' : `確認匯入 ${importPreview.length} 筆持股` }}
+              {{ importing ? '匯入中…' : `確認匯入 ${importPreview.filter((r: any) => importFilterCodes.has(r.stockCode)).length} 筆持股` }}
             </button>
           </div>
         </div>
