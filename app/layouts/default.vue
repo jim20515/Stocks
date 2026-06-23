@@ -230,6 +230,7 @@ async function submitForm() {
 </script>
 
 <template>
+  <LoadingBar />
   <div class="min-h-screen bg-slate-50 flex">
     <!-- 手機遮罩 -->
     <div v-if="sidebarOpen" class="fixed inset-0 bg-black/40 z-30 md:hidden" @click="sidebarOpen = false" />

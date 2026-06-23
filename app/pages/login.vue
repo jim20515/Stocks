@@ -4,6 +4,8 @@ definePageMeta({ layout: false })
 const { isLoggedIn, setSession } = useAuth()
 if (isLoggedIn.value) await navigateTo('/')
 
+const { start: startBar, finish: finishBar } = useLoadingIndicator()
+
 const tab = ref<'login' | 'register'>('login')
 const email = ref('')
 const password = ref('')
@@ -21,7 +23,8 @@ async function submit() {
       body: { email: email.value, password: password.value },
     })
     setSession(data.accessToken, data.user)
-    window.location.href = '/'
+    startBar()
+    await navigateTo('/')
   } catch (e: any) {
     error.value = e?.data?.message ?? '登入失敗，請再試一次'
   } finally {
@@ -31,6 +34,7 @@ async function submit() {
 </script>
 
 <template>
+  <LoadingBar />
   <div class="min-h-screen bg-slate-50 flex items-center justify-center p-4">
     <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-8">
       <div class="text-center mb-8">
