@@ -77,6 +77,9 @@ async function confirmImport() {
   }
 }
 
+// ── 帳戶別名 ──────────────────────────────────────────────
+const { data: accountList } = await useAuthFetch<{ id: number; name: string }[]>('/api/accounts')
+
 // ──────────────────────────────────────────────────────────
 const showModal = ref(false)
 const editingId = ref<number | null>(null)
@@ -361,8 +364,11 @@ async function submitForm() {
             </div>
             <div>
               <label class="block text-xs font-medium text-slate-600 mb-1.5">帳戶（選填）</label>
-              <input v-model="form.account" type="text" placeholder="例：板橋富邦、永豐..."
-                class="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+              <select v-model="form.account"
+                class="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white">
+                <option value="">不指定</option>
+                <option v-for="acc in (accountList ?? [])" :key="acc.id" :value="acc.name">{{ acc.name }}</option>
+              </select>
             </div>
           </div>
 
