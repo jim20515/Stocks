@@ -7,13 +7,14 @@ watch(route, () => { sidebarOpen.value = false })
 
 // ── XLS 匯入 ──────────────────────────────────────────────
 const xlsFileInput = ref<HTMLInputElement | null>(null)
-const showBrokerModal = ref(false)
 const showImportModal = ref(false)
 const importPreview = ref<any[]>([])
 const importing = ref(false)
 const pendingFile = ref<File | null>(null)
 const importFilterCodes = ref<Set<string>>(new Set())
 const importAccount = ref('')
+const detecting = ref(false)
+const detectError = ref('')
 
 function triggerImport() {
   xlsFileInput.value?.click()
@@ -23,78 +24,103 @@ async function onXlsSelected(e: Event) {
   const file = (e.target as HTMLInputElement).files?.[0]
   if (!file) return
   ;(e.target as HTMLInputElement).value = ''
-  pendingFile.value = file
-  showBrokerModal.value = true
+  detectError.value = ''
+  detecting.value = true
+  try {
+    await parseWithAI(file)
+  } finally {
+    detecting.value = false
+  }
 }
 
-async function parseAsFubon() {
-  const file = pendingFile.value
-  if (!file) return
-  showBrokerModal.value = false
+function extractCode(name: string) {
+  const m = name.match(/\(([^)]+)\)/)
+  return m ? m[1].toUpperCase() : name.toUpperCase()
+}
 
+function toDate(s: string, format?: string) {
+  // 民國轉西元
+  const rocMatch = s.match(/^(\d{2,3})[\/\-](\d{1,2})[\/\-](\d{1,2})/)
+  if (rocMatch && format?.includes('民國')) {
+    const y = parseInt(rocMatch[1]) + 1911
+    const m = rocMatch[2].padStart(2, '0')
+    const d = rocMatch[3].padStart(2, '0')
+    return `${y}-${m}-${d}`
+  }
+  return s.replace(/\//g, '-').slice(0, 10)
+}
+
+async function parseRawRows(file: File): Promise<any[]> {
   const text = await file.text()
   const isHtml = text.trimStart().startsWith('<')
-
-  function extractCode(name: string) {
-    const m = name.match(/\(([^)]+)\)/)
-    return m ? m[1] : name
-  }
-
-  function toDate(s: string) {
-    return s.replace(/\//g, '-').slice(0, 10)
-  }
-
-  let rows: { date: string; type: string; name: string; shares: number; price: number }[] = []
-
   if (isHtml) {
-    // 富邦 HTML 偽裝 XLS：直接用 DOMParser 解析
     const doc = new DOMParser().parseFromString(text, 'text/html')
-    const trs = doc.querySelectorAll('tr')
-    trs.forEach((tr, i) => {
-      if (i === 0) return // 略過標題行
-      const tds = tr.querySelectorAll('td')
-      if (tds.length < 5) return
-      const date = tds[0].textContent?.trim() ?? ''
-      const type = tds[1].textContent?.trim() ?? ''
-      const name = tds[2].textContent?.trim() ?? ''
-      const shares = parseFloat((tds[3].textContent ?? '').replace(/,/g, ''))
-      const price = parseFloat((tds[4].textContent ?? '').replace(/,/g, ''))
-      if (!date || !name || isNaN(shares) || isNaN(price)) return
-      rows.push({ date, type, name, shares, price })
+    const headers: string[] = []
+    const result: any[] = []
+    doc.querySelectorAll('tr').forEach((tr, i) => {
+      const cells = [...tr.querySelectorAll('td,th')].map(c => c.textContent?.trim() ?? '')
+      if (i === 0) { headers.push(...cells); return }
+      if (cells.every(c => !c)) return
+      const row: any = {}
+      cells.forEach((v, j) => { row[headers[j] ?? j] = v })
+      result.push(row)
     })
+    return result
   } else {
-    // 一般 XLSX 格式
     const XLSX = await import('xlsx')
     const buf = await file.arrayBuffer()
     const wb = XLSX.read(buf, { type: 'array', cellDates: true })
     const ws = wb.Sheets[wb.SheetNames[0]]
-    const raw: any[] = XLSX.utils.sheet_to_json(ws, { defval: null })
-    rows = raw
-      .filter(r => r['交易類別'] && r['股票名稱'] && r['成交股數'] && r['成交單價'])
-      .map(r => ({
-        date: r['成交日期'] instanceof Date ? r['成交日期'].toISOString().slice(0, 10) : String(r['成交日期']),
-        type: r['交易類別'],
-        name: r['股票名稱'],
-        shares: Number(r['成交股數']),
-        price: Number(r['成交單價']),
-      }))
+    return XLSX.utils.sheet_to_json(ws, { defval: null })
   }
+}
 
-  importPreview.value = rows.map(r => {
-    const finalShares = r.type === '現股賣出' ? -r.shares : r.shares
-    const code = extractCode(r.name)
+async function parseWithAI(file: File) {
+  const rawRows = await parseRawRows(file)
+  if (!rawRows.length) { detectError.value = '檔案無資料'; return }
+
+  // 呼叫 AI 偵測欄位對應
+  const mapping = await ($authFetch as any)('/api/import/detect', {
+    method: 'POST',
+    body: { rows: rawRows.slice(0, 5) },
+  })
+
+  const { dateKey, typeKey, nameKey, sharesKey, priceKey, buyKeyword, sellKeyword, codeInName, codeKey, dateFormat } = mapping
+
+  const rows = rawRows.map(r => {
+    const dateRaw = String(r[dateKey] ?? '')
+    const typeRaw = String(r[typeKey] ?? '')
+    const nameRaw = String(r[nameKey] ?? '')
+    const sharesRaw = parseFloat(String(r[sharesKey] ?? '').replace(/,/g, ''))
+    const priceRaw = parseFloat(String(r[priceKey] ?? '').replace(/,/g, ''))
+    if (!dateRaw || !nameRaw || isNaN(sharesRaw) || isNaN(priceRaw)) return null
+
+    const isSell = typeRaw.includes(sellKeyword) || (!typeRaw.includes(buyKeyword) && false)
+    let code = ''
+    let name = nameRaw
+    if (codeKey && r[codeKey]) {
+      code = String(r[codeKey]).trim().toUpperCase()
+    } else if (codeInName) {
+      code = extractCode(nameRaw)
+      name = nameRaw.replace(/\([^)]*\)/, '').trim()
+    } else {
+      code = nameRaw.trim().toUpperCase()
+    }
     const leverageMultiplier = code.endsWith('L') ? 2 : code.endsWith('B') ? 0 : 1
     return {
       stockCode: code,
-      stockName: r.name.replace(/\([^)]*\)/, '').trim(),
-      shares: finalShares,
-      averageCost: r.price,
-      buyDate: toDate(r.date),
-      tradeType: r.type,
+      stockName: name,
+      shares: isSell ? -sharesRaw : sharesRaw,
+      averageCost: priceRaw,
+      buyDate: toDate(dateRaw, dateFormat),
+      tradeType: typeRaw,
       leverageMultiplier,
     }
-  })
+  }).filter(Boolean)
 
+  if (!rows.length) { detectError.value = 'AI 無法解析此檔案格式'; return }
+
+  importPreview.value = rows
   importFilterCodes.value = new Set(importPreview.value.map((r: any) => r.stockCode))
   importAccount.value = ''
   showImportModal.value = true
@@ -246,29 +272,24 @@ async function submitForm() {
     <!-- 隱藏的 XLS 檔案輸入 -->
     <input ref="xlsFileInput" type="file" accept=".xls,.xlsx" class="hidden" @change="onXlsSelected" />
 
-    <!-- 券商選擇 Modal -->
+    <!-- AI 偵測中 / 錯誤提示 -->
     <Teleport to="body">
-      <div v-if="showBrokerModal"
+      <div v-if="detecting || detectError"
         class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
-        @click.self="showBrokerModal = false">
-        <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
-          <h2 class="text-base font-semibold text-slate-800 mb-1">選擇券商格式</h2>
-          <p class="text-xs text-slate-400 mb-5">請選擇這份對帳單的來源券商</p>
-          <div class="space-y-2">
-            <button @click="parseAsFubon"
-              class="w-full flex items-center gap-3 px-4 py-3 border border-slate-200 rounded-xl hover:border-indigo-400 hover:bg-indigo-50 transition text-left">
-              <div class="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center shrink-0">
-                <svg class="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-              </div>
-              <div>
-                <p class="text-sm font-medium text-slate-700">富邦對帳單</p>
-                <p class="text-xs text-slate-400">富邦證券 XLS 對帳單格式</p>
-              </div>
-            </button>
-          </div>
-          <button @click="showBrokerModal = false" class="mt-4 w-full text-xs text-slate-400 hover:text-slate-600 transition">取消</button>
+        @click.self="detectError = ''">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 text-center">
+          <template v-if="detecting">
+            <svg class="animate-spin w-8 h-8 text-indigo-500 mx-auto mb-3" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+            </svg>
+            <p class="text-sm font-medium text-slate-700">AI 正在分析欄位格式…</p>
+            <p class="text-xs text-slate-400 mt-1">通常不到 5 秒</p>
+          </template>
+          <template v-else-if="detectError">
+            <p class="text-sm font-medium text-red-600 mb-2">{{ detectError }}</p>
+            <button @click="detectError = ''" class="text-xs text-slate-400 hover:text-slate-600 transition">關閉</button>
+          </template>
         </div>
       </div>
     </Teleport>
