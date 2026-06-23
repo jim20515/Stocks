@@ -187,13 +187,18 @@ async function refreshPrices() {
             </svg>
             全部刪除
           </button>
-          <button @click="refreshPrices" :disabled="refreshing"
-            class="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-slate-500 border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition">
-            <svg :class="refreshing ? 'animate-spin' : ''" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-            更新股價
-          </button>
+          <div class="relative group">
+            <button @click="refreshPrices" :disabled="refreshing"
+              class="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-slate-500 border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition">
+              <svg :class="refreshing ? 'animate-spin' : ''" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              更新股價
+            </button>
+            <div class="absolute right-0 top-full mt-1.5 z-50 hidden group-hover:block bg-slate-800 text-slate-100 text-xs rounded-lg px-2.5 py-1.5 whitespace-nowrap shadow-lg pointer-events-none">
+              更新所有交易明細的現價
+            </div>
+          </div>
           <button @click="refreshPrices" :disabled="refreshing"
             class="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-indigo-500 border border-indigo-200 rounded-lg hover:bg-indigo-50 disabled:opacity-50 transition">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
