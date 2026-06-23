@@ -186,6 +186,13 @@ async function refreshPrices() {
             </svg>
             更新股價
           </button>
+          <button @click="refreshPrices" :disabled="refreshing"
+            class="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-indigo-500 border border-indigo-200 rounded-lg hover:bg-indigo-50 disabled:opacity-50 transition">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 11h.01M12 11h.01M15 11h.01M4 19h16a2 2 0 002-2V7a2 2 0 00-2-2H4a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+            重新計算成本
+          </button>
           <p class="text-xs text-slate-400">股價來源：{{ s?.priceDate || '—' }}</p>
         </div>
       </div>
