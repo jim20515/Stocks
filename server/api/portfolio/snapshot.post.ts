@@ -11,46 +11,49 @@ export default defineEventHandler(async (event) => {
 
   if (!holdings?.length) return { success: true, skipped: true }
 
-  // 計算 WACC（與 summary API 相同邏輯）
-  const runningMap: Record<string, { totalCost: number; totalShares: number }> = {}
+  // 按帳戶分組計算 WACC（與 summary API 相同邏輯）
+  const runningMap: Record<string, Record<string, { totalCost: number; totalShares: number }>> = {}
   for (const h of holdings) {
     const code = h.stock_code.toUpperCase()
-    if (!runningMap[code]) runningMap[code] = { totalCost: 0, totalShares: 0 }
+    const acct = h.account ?? ''
+    if (!runningMap[acct]) runningMap[acct] = {}
+    if (!runningMap[acct][code]) runningMap[acct][code] = { totalCost: 0, totalShares: 0 }
     if (h.shares > 0) {
-      runningMap[code].totalCost += Number(h.average_cost) * h.shares
-      runningMap[code].totalShares += h.shares
+      runningMap[acct][code].totalCost += Number(h.average_cost) * h.shares
+      runningMap[acct][code].totalShares += h.shares
     } else {
-      const { totalCost, totalShares } = runningMap[code]
+      const { totalCost, totalShares } = runningMap[acct][code]
       const wacc = totalShares > 0 ? totalCost / totalShares : Number(h.average_cost)
       const abs = Math.abs(h.shares)
-      runningMap[code].totalCost = Math.max(0, totalCost - wacc * abs)
-      runningMap[code].totalShares = Math.max(0, totalShares - abs)
+      runningMap[acct][code].totalCost = Math.max(0, totalCost - wacc * abs)
+      runningMap[acct][code].totalShares = Math.max(0, totalShares - abs)
     }
   }
 
-  // 淨持股
-  const netSharesMap: Record<string, number> = {}
-  for (const h of holdings) {
-    const code = h.stock_code.toUpperCase()
-    netSharesMap[code] = (netSharesMap[code] ?? 0) + h.shares
+  // 收集所有有淨持股的代號
+  const codesWithShares = new Set<string>()
+  for (const codeMap of Object.values(runningMap)) {
+    for (const [code, { totalShares }] of Object.entries(codeMap)) {
+      if (totalShares > 0) codesWithShares.add(code)
+    }
   }
 
-  const codes = Object.keys(netSharesMap).filter(c => netSharesMap[c] > 0)
-  const priceInfos = await fetchPricesWithChange(codes)
+  const priceInfos = await fetchPricesWithChange([...codesWithShares])
 
   let totalValue = 0
   let totalPrevValue = 0
   let totalCost = 0
-  for (const code of codes) {
-    const netShares = netSharesMap[code]
-    const info = priceInfos[code]
-    const wacc = runningMap[code]?.totalShares > 0
-      ? runningMap[code].totalCost / runningMap[code].totalShares : 0
-    const price = info?.price ?? wacc
-    const prevClose = info?.prevClose ?? price
-    totalValue += price * netShares
-    totalPrevValue += prevClose * netShares
-    totalCost += wacc * netShares
+  for (const codeMap of Object.values(runningMap)) {
+    for (const [code, { totalCost: cost, totalShares: shares }] of Object.entries(codeMap)) {
+      if (shares <= 0) continue
+      const wacc = cost / shares
+      const info = priceInfos[code]
+      const price = info?.price ?? wacc
+      const prevClose = info?.prevClose ?? price
+      totalValue += price * shares
+      totalPrevValue += prevClose * shares
+      totalCost += wacc * shares
+    }
   }
 
   totalValue = Math.round(totalValue)
@@ -62,8 +65,9 @@ export default defineEventHandler(async (event) => {
   const dailyTradeAmount = Math.round(todayTrades.reduce((s: number, h: any) => {
     if (h.shares > 0) return s + h.shares * Number(h.average_cost)
     const code = h.stock_code.toUpperCase()
-    const wacc = runningMap[code]?.totalShares > 0
-      ? runningMap[code].totalCost / runningMap[code].totalShares : Number(h.average_cost)
+    const acct = h.account ?? ''
+    const entry = runningMap[acct]?.[code]
+    const wacc = entry?.totalShares > 0 ? entry.totalCost / entry.totalShares : Number(h.average_cost)
     return s + h.shares * wacc
   }, 0))
 
