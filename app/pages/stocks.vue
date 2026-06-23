@@ -14,6 +14,7 @@ const s = computed(() => summary.value as any)
 const filterCode = ref('')
 const filterProfitPct = ref<number | ''>('')
 const filterTradeType = ref<'all' | 'buy' | 'sell'>('all')
+const filterAccount = ref('')
 
 const filteredItems = computed(() => {
   return allItems.value.filter((h: any) => {
@@ -21,6 +22,7 @@ const filteredItems = computed(() => {
     if (filterProfitPct.value !== '' && h.profitPct < Number(filterProfitPct.value)) return false
     if (filterTradeType.value === 'buy' && h.shares < 0) return false
     if (filterTradeType.value === 'sell' && h.shares >= 0) return false
+    if (filterAccount.value && !(h.account ?? '').includes(filterAccount.value)) return false
     return true
   })
 })
@@ -29,10 +31,11 @@ function clearFilters() {
   filterCode.value = ''
   filterProfitPct.value = ''
   filterTradeType.value = 'all'
+  filterAccount.value = ''
   currentPage.value = 1
 }
 
-const hasFilter = computed(() => filterCode.value || filterProfitPct.value !== '' || filterTradeType.value !== 'all')
+const hasFilter = computed(() => filterCode.value || filterProfitPct.value !== '' || filterTradeType.value !== 'all' || filterAccount.value)
 
 // 排序
 const sortKey = ref<string>('buyDate')
@@ -147,6 +150,11 @@ async function refreshPrices() {
               class="w-24 px-2.5 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300" />
             <span class="text-sm text-slate-400">%</span>
           </div>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-500 mb-1">帳戶</label>
+          <input v-model="filterAccount" type="text" placeholder="搜尋帳戶…" @input="currentPage = 1"
+            class="w-28 px-2.5 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300" />
         </div>
         <div>
           <label class="block text-xs font-medium text-slate-500 mb-1">交易類型</label>
