@@ -18,21 +18,20 @@ const detectError = ref('')
 
 function detectMapping(keys: string[]) {
   const find = (...kws: string[]) => keys.find(k => kws.some(kw => k.includes(kw))) ?? null
-  const dateKey   = find('日期', 'date', 'Date')
-  const typeKey   = find('類別', '類型', '買賣', 'type', 'Type', '交易')
-  const nameKey   = find('名稱', '股票', 'name', 'Name', '商品')
-  const sharesKey = find('股數', '數量', '張數', 'shares', 'qty', 'Qty', '成交量')
-  const priceKey  = find('單價', '價格', '成交價', 'price', 'Price', '均價')
-  const codeKey   = find('代號', '代碼', 'code', 'Code', '股號')
+  const dateKey    = find('日期', 'date', 'Date')
+  const typeKey    = find('類別', '類型', '買賣', 'type', 'Type', '交易')
+  const nameKey    = find('名稱', '股票', 'name', 'Name', '商品', '股名')
+  const sharesKey  = find('股數', '數量', '張數', 'shares', 'qty', 'Qty', '成交量', '成交股數')
+  const priceKey   = find('單價', '價格', '成交價', 'price', 'Price', '均價', '成交單價')
+  const codeKey    = find('代號', '代碼', 'code', 'Code', '股號')
+  // 國泰世華：用淨收付正負號判斷買賣
+  const netKey     = find('淨收付', '淨額', '收付')
 
-  // 買/賣關鍵字
   const buyKeyword  = '買'
   const sellKeyword = '賣'
+  const dateFormat  = '民國'
 
-  // 判斷日期格式
-  const dateFormat = '民國'  // 預設嘗試民國轉換，toDate() 會自動判斷
-
-  return { dateKey, typeKey, nameKey, sharesKey, priceKey, codeKey, buyKeyword, sellKeyword, dateFormat, codeInName: !codeKey }
+  return { dateKey, typeKey, nameKey, sharesKey, priceKey, codeKey, netKey, buyKeyword, sellKeyword, dateFormat, codeInName: !codeKey }
 }
 
 function triggerImport() {
@@ -71,8 +70,9 @@ function toDate(s: string, format?: string) {
 
 async function parseRawRows(file: File): Promise<any[]> {
   const text = await file.text()
-  const isHtml = text.trimStart().startsWith('<')
-  if (isHtml) {
+  const trimmed = text.trimStart()
+  if (trimmed.startsWith('<')) {
+    // HTML 偽裝 XLS
     const doc = new DOMParser().parseFromString(text, 'text/html')
     const headers: string[] = []
     const result: any[] = []
@@ -85,7 +85,27 @@ async function parseRawRows(file: File): Promise<any[]> {
       result.push(row)
     })
     return result
+  } else if (file.name.endsWith('.csv') || trimmed.includes(',')) {
+    // CSV 解析
+    const lines = text.split(/\r?\n/).filter(l => l.trim())
+    if (lines.length < 2) return []
+    const headers = lines[0].split(',').map(h => h.trim())
+    return lines.slice(1).map(line => {
+      // 處理欄位內含引號與逗號的情況
+      const cells: string[] = []
+      let cur = '', inQuote = false
+      for (const ch of line) {
+        if (ch === '"') { inQuote = !inQuote }
+        else if (ch === ',' && !inQuote) { cells.push(cur.trim()); cur = '' }
+        else { cur += ch }
+      }
+      cells.push(cur.trim())
+      const row: any = {}
+      headers.forEach((h, i) => { row[h] = cells[i] ?? '' })
+      return row
+    }).filter(r => Object.values(r).some(v => v !== ''))
   } else {
+    // XLSX
     const XLSX = await import('xlsx')
     const buf = await file.arrayBuffer()
     const wb = XLSX.read(buf, { type: 'array', cellDates: true })
@@ -100,7 +120,7 @@ async function parseWithAI(file: File) {
 
   const keys = Object.keys(rawRows[0] ?? {})
   const mapping = detectMapping(keys)
-  const { dateKey, typeKey, nameKey, sharesKey, priceKey, buyKeyword, sellKeyword, codeInName, codeKey, dateFormat } = mapping
+  const { dateKey, typeKey, nameKey, sharesKey, priceKey, codeKey, netKey, buyKeyword, sellKeyword, codeInName, dateFormat } = mapping
 
   if (!dateKey || !nameKey || !sharesKey || !priceKey) {
     detectError.value = `無法自動識別欄位（找到：${keys.join('、')}）`
@@ -109,31 +129,39 @@ async function parseWithAI(file: File) {
 
   const rows = rawRows.map(r => {
     const dateRaw = String(r[dateKey] ?? '')
-    const typeRaw = String(r[typeKey] ?? '')
     const nameRaw = String(r[nameKey] ?? '')
     const sharesRaw = parseFloat(String(r[sharesKey] ?? '').replace(/,/g, ''))
     const priceRaw = parseFloat(String(r[priceKey] ?? '').replace(/,/g, ''))
     if (!dateRaw || !nameRaw || isNaN(sharesRaw) || isNaN(priceRaw)) return null
 
-    const isSell = typeRaw.includes(sellKeyword) || (!typeRaw.includes(buyKeyword) && false)
+    // 判斷買賣：優先用類型欄，其次用淨收付正負號
+    let isSell = false
+    if (typeKey && r[typeKey]) {
+      isSell = String(r[typeKey]).includes(sellKeyword)
+    } else if (netKey && r[netKey]) {
+      const net = parseFloat(String(r[netKey]).replace(/,/g, ''))
+      isSell = net > 0  // 淨收付為正 = 賣出（收到錢）
+    }
+
     let code = ''
     let name = nameRaw
     if (codeKey && r[codeKey]) {
       code = String(r[codeKey]).trim().toUpperCase()
-    } else if (codeInName) {
+    } else if (codeInName && nameRaw.includes('(')) {
       code = extractCode(nameRaw)
       name = nameRaw.replace(/\([^)]*\)/, '').trim()
     } else {
-      code = nameRaw.trim().toUpperCase()
+      code = nameRaw.trim()
     }
     const leverageMultiplier = code.endsWith('L') ? 2 : code.endsWith('B') ? 0 : 1
+    const tradeType = typeKey && r[typeKey] ? String(r[typeKey]) : isSell ? '賣出' : '買進'
     return {
       stockCode: code,
       stockName: name,
       shares: isSell ? -sharesRaw : sharesRaw,
       averageCost: priceRaw,
       buyDate: toDate(dateRaw, dateFormat),
-      tradeType: typeRaw,
+      tradeType,
       leverageMultiplier,
     }
   }).filter(Boolean)
