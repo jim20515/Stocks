@@ -176,14 +176,19 @@ async function refreshWithSnapshot() {
           </div>
         </div>
         <!-- 歷史匯入按鈕 -->
-        <button @click="runHistoryImport" :disabled="importing"
-          class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-60 transition">
-          <svg :class="importing ? 'animate-spin' : ''" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-          </svg>
-          {{ importing ? '匯入中…' : '重新計算歷史資料' }}
-        </button>
+        <div class="relative group">
+          <button @click="runHistoryImport" :disabled="importing"
+            class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-60 transition">
+            <svg :class="importing ? 'animate-spin' : ''" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+            </svg>
+            {{ importing ? '匯入中…' : '重新計算歷史資料' }}
+          </button>
+          <div class="absolute left-0 top-full mt-1.5 z-50 hidden group-hover:block bg-slate-800 text-slate-100 text-xs rounded-lg px-2.5 py-1.5 whitespace-nowrap shadow-lg pointer-events-none">
+            當有更動交易記錄時，可重新計算歷史資料
+          </div>
+        </div>
         <!-- 重新整理 -->
         <button @click="refresh"
           class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-500 border border-slate-200 rounded-lg hover:bg-slate-50 transition">
