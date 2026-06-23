@@ -13,6 +13,7 @@ const importPreview = ref<any[]>([])
 const importing = ref(false)
 const pendingFile = ref<File | null>(null)
 const importFilterCodes = ref<Set<string>>(new Set())
+const importAccount = ref('')
 
 function triggerImport() {
   xlsFileInput.value?.click()
@@ -95,13 +96,16 @@ async function parseAsFubon() {
   })
 
   importFilterCodes.value = new Set(importPreview.value.map((r: any) => r.stockCode))
+  importAccount.value = ''
   showImportModal.value = true
 }
 
 async function confirmImport() {
   importing.value = true
   try {
-    const filtered = importPreview.value.filter((r: any) => importFilterCodes.value.has(r.stockCode))
+    const filtered = importPreview.value
+      .filter((r: any) => importFilterCodes.value.has(r.stockCode))
+      .map((r: any) => ({ ...r, account: importAccount.value || null }))
     await ($authFetch as any)('/api/stockholdings/import', {
       method: 'POST',
       body: { items: filtered },
@@ -286,18 +290,28 @@ async function submitForm() {
             </button>
           </div>
 
-          <!-- 股票代號篩選 -->
-          <div class="px-5 py-3 border-b border-slate-100 shrink-0">
-            <p class="text-xs font-medium text-slate-500 mb-2">選擇要匯入的股票（勾選 = 匯入）</p>
-            <div class="flex flex-wrap gap-2">
-              <label v-for="code in [...new Set(importPreview.map((r: any) => r.stockCode))]" :key="code"
-                class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border cursor-pointer select-none transition text-xs font-medium"
-                :class="importFilterCodes.has(code) ? 'border-indigo-300 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-400'">
-                <input type="checkbox" class="hidden"
-                  :checked="importFilterCodes.has(code)"
-                  @change="importFilterCodes.has(code) ? importFilterCodes.delete(code) : importFilterCodes.add(code); importFilterCodes = new Set(importFilterCodes)" />
-                {{ code }}
-              </label>
+          <!-- 股票代號篩選 + 帳戶選擇 -->
+          <div class="px-5 py-3 border-b border-slate-100 shrink-0 space-y-3">
+            <div>
+              <p class="text-xs font-medium text-slate-500 mb-2">選擇要匯入的股票（勾選 = 匯入）</p>
+              <div class="flex flex-wrap gap-2">
+                <label v-for="code in [...new Set(importPreview.map((r: any) => r.stockCode))]" :key="code"
+                  class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border cursor-pointer select-none transition text-xs font-medium"
+                  :class="importFilterCodes.has(code) ? 'border-indigo-300 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-400'">
+                  <input type="checkbox" class="hidden"
+                    :checked="importFilterCodes.has(code)"
+                    @change="importFilterCodes.has(code) ? importFilterCodes.delete(code) : importFilterCodes.add(code); importFilterCodes = new Set(importFilterCodes)" />
+                  {{ code }}
+                </label>
+              </div>
+            </div>
+            <div class="flex items-center gap-3">
+              <p class="text-xs font-medium text-slate-500 shrink-0">歸屬帳戶</p>
+              <select v-model="importAccount"
+                class="px-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300">
+                <option value="">不指定</option>
+                <option v-for="acc in (accountList ?? [])" :key="acc.id" :value="acc.name">{{ acc.name }}</option>
+              </select>
             </div>
           </div>
 

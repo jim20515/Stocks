@@ -17,6 +17,7 @@ export default defineEventHandler(async (event) => {
     buy_date: h.buyDate,
     leverage_multiplier: Number(h.leverageMultiplier ?? 1),
     watermark_price: h.watermarkPrice ? Number(h.watermarkPrice) : null,
+    account: h.account?.trim() || null,
   }))
 
   const { error } = await client.from('stock_holdings').insert(rows)
