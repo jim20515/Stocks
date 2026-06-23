@@ -15,49 +15,40 @@ export default defineEventHandler(async (event) => {
     return { items: [], cashAmount, totalCost: 0, totalValue: 0, totalProfit: 0, totalProfitPct: 0, totalRealizedProfit: 0, priceDate: null }
   }
 
-  // 按交易日排序後，逐筆計算每檔股票在「賣出當下」的歷史 WACC
-  // runningMap: 記錄目前累積的買入成本與股數（隨時間推進）
-  const runningMap: Record<string, { totalCost: number; totalShares: number }> = {}
-  // sellWaccMap: 每筆賣出記錄對應的歷史 WACC（用 id 為 key）
+  // runningMap: account → code → { totalCost, totalShares }
+  // null account 用 '' 作為 key，自成一組
+  const runningMap: Record<string, Record<string, { totalCost: number; totalShares: number }>> = {}
   const sellWaccMap: Record<number, number> = {}
 
   for (const h of holdings) {
     const code = h.stock_code.toUpperCase()
-    if (!runningMap[code]) runningMap[code] = { totalCost: 0, totalShares: 0 }
+    const acct = h.account ?? ''
+
+    if (!runningMap[acct]) runningMap[acct] = {}
+    if (!runningMap[acct][code]) runningMap[acct][code] = { totalCost: 0, totalShares: 0 }
 
     if (h.shares > 0) {
-      // 買入：累積加權成本
-      runningMap[code].totalCost += Number(h.average_cost) * h.shares
-      runningMap[code].totalShares += h.shares
+      runningMap[acct][code].totalCost += Number(h.average_cost) * h.shares
+      runningMap[acct][code].totalShares += h.shares
     } else {
-      // 賣出：記錄此時的 WACC，再從累積中扣除
-      const { totalCost, totalShares } = runningMap[code]
+      const { totalCost, totalShares } = runningMap[acct][code]
       const wacc = totalShares > 0 ? totalCost / totalShares : Number(h.average_cost)
       sellWaccMap[h.id] = wacc
       const absShares = Math.abs(h.shares)
-      runningMap[code].totalCost -= wacc * absShares
-      runningMap[code].totalShares -= absShares
-      if (runningMap[code].totalShares < 0) runningMap[code].totalShares = 0
-      if (runningMap[code].totalCost < 0) runningMap[code].totalCost = 0
+      runningMap[acct][code].totalCost = Math.max(0, totalCost - wacc * absShares)
+      runningMap[acct][code].totalShares = Math.max(0, totalShares - absShares)
     }
   }
 
-  // 計算最終 WACC（剩餘持股用）
-  const finalWaccMap: Record<string, number> = {}
-  for (const [code, { totalCost, totalShares }] of Object.entries(runningMap)) {
-    finalWaccMap[code] = totalShares > 0 ? totalCost / totalShares : 0
+  // 收集所有有淨持股的代號，用於抓現價
+  const codesWithShares = new Set<string>()
+  for (const codeMap of Object.values(runningMap)) {
+    for (const [code, { totalShares }] of Object.entries(codeMap)) {
+      if (totalShares > 0) codesWithShares.add(code)
+    }
   }
 
-  // 計算每支股票的淨持股（買入 - 賣出）
-  const netSharesMap: Record<string, number> = {}
-  for (const h of holdings) {
-    const code = h.stock_code.toUpperCase()
-    netSharesMap[code] = (netSharesMap[code] ?? 0) + h.shares
-  }
-
-  const buyHoldings = holdings.filter(h => h.shares > 0)
-  const codes = [...new Set(buyHoldings.map(h => h.stock_code))]
-  const priceInfos = await fetchPricesWithChange(codes)
+  const priceInfos = await fetchPricesWithChange([...codesWithShares])
   const prices: Record<string, number> = {}
   for (const [code, info] of Object.entries(priceInfos)) prices[code] = info.price
 
@@ -120,21 +111,19 @@ export default defineEventHandler(async (event) => {
     }
   })
 
-  const sellItems = items.filter(i => i.isRealized)
-
-  // 總成本／總市值：用淨持股 × 最終均成本／現價
+  // 總成本／市值：跨帳戶加總（每帳戶各自 WACC × 淨持股）
   let totalCost = 0
   let totalValue = 0
-  let totalPrevValue = 0   // 昨日市值（用昨收計算）
-  for (const [codeUpper, netShares] of Object.entries(netSharesMap)) {
-    if (netShares <= 0) continue
-    const wacc = finalWaccMap[codeUpper] ?? 0
-    const info = priceInfos[codeUpper]
-    const price = info?.price ?? null
-    const prevClose = info?.prevClose ?? null
-    totalCost += wacc * netShares
-    totalValue += price ? price * netShares : wacc * netShares
-    totalPrevValue += prevClose ? prevClose * netShares : (price ?? wacc) * netShares
+  let totalPrevValue = 0
+  for (const codeMap of Object.values(runningMap)) {
+    for (const [code, { totalCost: cost, totalShares: shares }] of Object.entries(codeMap)) {
+      if (shares <= 0) continue
+      const wacc = cost / shares
+      const info = priceInfos[code]
+      totalCost += wacc * shares
+      totalValue += info?.price ? info.price * shares : wacc * shares
+      totalPrevValue += info?.prevClose ? info.prevClose * shares : (info?.price ?? wacc) * shares
+    }
   }
   totalCost = Math.round(totalCost)
   totalValue = Math.round(totalValue)
@@ -149,7 +138,7 @@ export default defineEventHandler(async (event) => {
   const totalProfitPct = totalCost > 0 && totalValue > 0
     ? Math.round(totalProfit / totalCost * 10000) / 100
     : 0
-  const totalRealizedProfit = sellItems.reduce((s, i) => s + i.profit, 0)
+  const totalRealizedProfit = items.filter(i => i.isRealized).reduce((s, i) => s + i.profit, 0)
 
   return {
     items,
