@@ -47,10 +47,13 @@ const statCards = computed(() => {
 
 // 使用 API 回傳的 byCode（WACC-based 淨持股加總）
 const items = computed(() => {
-  return ((summary.value as any)?.byCode ?? []).map((h: any) => ({
-    ...h,
-    profitPct: h.cost > 0 && h.value > 0 ? Math.round((h.profit / h.cost) * 10000) / 100 : 0,
-  }))
+  return ((summary.value as any)?.byCode ?? [])
+    .map((h: any) => ({
+      ...h,
+      profitPct: h.cost > 0 && h.value > 0 ? Math.round((h.profit / h.cost) * 10000) / 100 : 0,
+    }))
+    .sort((a: any, b: any) => b.profit - a.profit)
+    .slice(0, 4)
 })
 
 function pct(h: any) {
