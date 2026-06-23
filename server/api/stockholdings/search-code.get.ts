@@ -2,7 +2,10 @@ export default defineEventHandler(async (event) => {
   const name = String(getQuery(event).name ?? '').trim()
   if (!name) throw createError({ statusCode: 400, message: '請提供股票名稱' })
 
-  // 計算兩個字串的最長公共子字串長度
+  function normalize(s: string) {
+    return s.replace(/\s/g, '').toUpperCase()
+  }
+
   function lcs(a: string, b: string): number {
     let max = 0
     for (let i = 0; i < a.length; i++) {
@@ -15,40 +18,45 @@ export default defineEventHandler(async (event) => {
     return max
   }
 
-  // 正規化：移除空白、大小寫統一、全形轉半形
-  function normalize(s: string) {
-    return s.replace(/\s/g, '').toUpperCase()
-      .replace(/Ａ-Ｚ/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
-  }
-
   const searchName = normalize(name)
+  const candidates: { code: string; name: string; score: number }[] = []
 
-  const sources = [
-    'https://openapi.twse.com.tw/v1/opendata/t187ap03_L',  // 上市公司
-    'https://openapi.twse.com.tw/v1/opendata/t187ap03_O',  // 上櫃公司
-    'https://openapi.twse.com.tw/v1/ETF/domestic',          // 上市 ETF
-  ]
+  // TWSE 全量股票（含 ETF）每日行情清單
+  try {
+    const list = await $fetch<{ Code: string; Name: string }[]>(
+      'https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL'
+    )
+    for (const c of list) {
+      const code = c.Code?.trim() ?? ''
+      const abbr = normalize(c.Name ?? '')
+      if (!code || !abbr) continue
 
-  const candidates: { code: string; abbr: string; score: number }[] = []
+      if (searchName === abbr) { candidates.push({ code, name: c.Name, score: 999 }); continue }
+      if (searchName.includes(abbr) || abbr.includes(searchName)) {
+        candidates.push({ code, name: c.Name, score: 100 })
+        continue
+      }
+      const common = lcs(searchName, abbr)
+      if (common >= 3) candidates.push({ code, name: c.Name, score: common })
+    }
+  } catch {}
 
-  for (const url of sources) {
+  // 上櫃補充
+  if (!candidates.length) {
     try {
-      const list = await $fetch<any[]>(url)
+      const list = await $fetch<{ 公司代號: string; 公司簡稱: string }[]>(
+        'https://openapi.twse.com.tw/v1/opendata/t187ap03_O'
+      )
       for (const c of list) {
-        const code: string = c.公司代號 ?? c.stockNo ?? c.ETFid ?? ''
-        const abbr: string = normalize(c.公司簡稱 ?? c.stockName ?? c.ETFname ?? '')
+        const code = c.公司代號?.trim() ?? ''
+        const abbr = normalize(c.公司簡稱 ?? '')
         if (!code || !abbr) continue
-
-        // 完全包含：高分
         if (searchName.includes(abbr) || abbr.includes(searchName)) {
-          candidates.push({ code, abbr, score: 100 })
+          candidates.push({ code, name: c.公司簡稱, score: 100 })
           continue
         }
-        // 最長公共子字串 >= 3 個字：計分
         const common = lcs(searchName, abbr)
-        if (common >= 3) {
-          candidates.push({ code, abbr, score: common })
-        }
+        if (common >= 3) candidates.push({ code, name: c.公司簡稱, score: common })
       }
     } catch {}
   }
@@ -57,5 +65,5 @@ export default defineEventHandler(async (event) => {
 
   candidates.sort((a, b) => b.score - a.score)
   const best = candidates[0]
-  return { code: best.code, name: best.abbr }
+  return { code: best.code, name: best.name }
 })
