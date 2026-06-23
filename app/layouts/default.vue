@@ -166,7 +166,22 @@ async function parseWithAI(file: File) {
     }
   }).filter(Boolean)
 
-  if (!rows.length) { detectError.value = 'AI 無法解析此檔案格式'; return }
+  if (!rows.length) { detectError.value = '無法解析此檔案格式'; return }
+
+  // 對無法從名稱取得代號的股票，查詢 TWSE/OTC
+  const needLookup = [...new Set(
+    rows.filter((r: any) => r.stockCode === r.stockName).map((r: any) => r.stockName)
+  )]
+  const codeMap: Record<string, string> = {}
+  await Promise.all(needLookup.map(async (stockName: string) => {
+    try {
+      const res = await ($authFetch as any)(`/api/stockholdings/search-code?name=${encodeURIComponent(stockName)}`)
+      if (res?.code) codeMap[stockName] = res.code
+    } catch {}
+  }))
+  rows.forEach((r: any) => {
+    if (codeMap[r.stockName]) r.stockCode = codeMap[r.stockName]
+  })
 
   importPreview.value = rows
   importFilterCodes.value = new Set(importPreview.value.map((r: any) => r.stockCode))
