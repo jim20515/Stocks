@@ -57,6 +57,8 @@ const allRows = computed(() => {
 // 分頁
 const pageSize = 10
 const currentPage = ref(1)
+const refreshing = ref(false)
+
 const totalPages = computed(() => Math.ceil(allRows.value.length / pageSize))
 const rows = computed(() => {
   const start = (currentPage.value - 1) * pageSize
@@ -135,9 +137,19 @@ async function runHistoryImport() {
     }
   }
 
+
   importDone.value = true
   importing.value = false
+  await refreshWithSnapshot()
+}
+
+async function refreshWithSnapshot() {
+  refreshing.value = true
+  try {
+    await $fetch('/api/portfolio/snapshot', { method: 'POST', headers: authHeaders.value as HeadersInit })
+  } catch {}
   await refresh()
+  refreshing.value = false
 }
 </script>
 
@@ -149,6 +161,15 @@ async function runHistoryImport() {
         <p class="text-xs text-slate-400 mt-0.5">每個交易日 14:35 自動記錄</p>
       </div>
       <div class="flex items-center gap-2">
+        <!-- 抓取當天數值 -->
+        <button @click="refreshWithSnapshot" :disabled="refreshing"
+          class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition">
+          <svg :class="refreshing ? 'animate-spin' : ''" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0" />
+          </svg>
+          {{ refreshing ? '抓取中…' : '抓取當天數值' }}
+        </button>
         <!-- 歷史匯入按鈕 -->
         <button @click="runHistoryImport" :disabled="importing"
           class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-60 transition">
@@ -156,7 +177,7 @@ async function runHistoryImport() {
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
               d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
           </svg>
-          {{ importing ? '匯入中…' : '匯入歷史資料' }}
+          {{ importing ? '匯入中…' : '重新計算歷史資料' }}
         </button>
         <!-- 重新整理 -->
         <button @click="refresh"
@@ -174,7 +195,7 @@ async function runHistoryImport() {
     <div v-if="showModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
       <div class="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4">
         <div class="flex items-center justify-between">
-          <h3 class="font-bold text-slate-800 text-base">匯入歷史資料</h3>
+          <h3 class="font-bold text-slate-800 text-base">重新計算歷史資料</h3>
           <span v-if="!importDone" class="text-xs text-slate-400 animate-pulse">處理中…</span>
           <span v-else class="text-xs text-green-600 font-medium">✓ 完成</span>
         </div>
@@ -237,7 +258,7 @@ async function runHistoryImport() {
 
     <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
       <div v-if="!allRows.length" class="py-16 text-center text-sm text-slate-400">
-        尚無記錄，點上方「匯入歷史資料」或等今日 14:35 自動存入
+        尚無記錄，點上方「重新計算歷史資料」或等今日 14:35 自動存入
       </div>
 
       <div v-else class="overflow-x-auto">

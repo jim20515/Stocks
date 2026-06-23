@@ -40,6 +40,7 @@ export default defineEventHandler(async (event) => {
 
   let totalValue = 0
   let totalPrevValue = 0
+  let totalCost = 0
   for (const code of codes) {
     const netShares = netSharesMap[code]
     const info = priceInfos[code]
@@ -49,17 +50,27 @@ export default defineEventHandler(async (event) => {
     const prevClose = info?.prevClose ?? price
     totalValue += price * netShares
     totalPrevValue += prevClose * netShares
+    totalCost += wacc * netShares
   }
 
-  const cashAmount = Number((settings as any)?.cash_amount ?? 0)
-  totalValue = Math.round(totalValue) + cashAmount
+  totalValue = Math.round(totalValue)
+  totalCost = Math.round(totalCost)
 
-  const dailyChange = Math.round(totalValue - totalPrevValue - cashAmount)
+  // 今日買賣金額
+  const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Taipei' })
+  const todayTrades = holdings.filter((h: any) => h.buy_date === today)
+  const dailyTradeAmount = Math.round(todayTrades.reduce((s: number, h: any) => {
+    if (h.shares > 0) return s + h.shares * Number(h.average_cost)
+    const code = h.stock_code.toUpperCase()
+    const wacc = runningMap[code]?.totalShares > 0
+      ? runningMap[code].totalCost / runningMap[code].totalShares : Number(h.average_cost)
+    return s + h.shares * wacc
+  }, 0))
+
+  const dailyChange = Math.round(totalValue - totalPrevValue - dailyTradeAmount)
   const dailyChangePct = totalPrevValue > 0
     ? Math.round(dailyChange / totalPrevValue * 10000) / 100
     : null
-
-  const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Taipei' })
 
   const { error } = await client
     .from('portfolio_daily_snapshot')
@@ -67,6 +78,8 @@ export default defineEventHandler(async (event) => {
       user_id: userId,
       date: today,
       total_value: totalValue,
+      total_cost: totalCost,
+      daily_trade_amount: dailyTradeAmount,
       daily_change: dailyChange,
       daily_change_pct: dailyChangePct,
     }, { onConflict: 'user_id,date' })
