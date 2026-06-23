@@ -7,9 +7,11 @@ watch(route, () => { sidebarOpen.value = false })
 
 // ── XLS 匯入 ──────────────────────────────────────────────
 const xlsFileInput = ref<HTMLInputElement | null>(null)
+const showBrokerModal = ref(false)
 const showImportModal = ref(false)
 const importPreview = ref<any[]>([])
 const importing = ref(false)
+const pendingFile = ref<File | null>(null)
 
 function triggerImport() {
   xlsFileInput.value?.click()
@@ -19,6 +21,14 @@ async function onXlsSelected(e: Event) {
   const file = (e.target as HTMLInputElement).files?.[0]
   if (!file) return
   ;(e.target as HTMLInputElement).value = ''
+  pendingFile.value = file
+  showBrokerModal.value = true
+}
+
+async function parseAsFubon() {
+  const file = pendingFile.value
+  if (!file) return
+  showBrokerModal.value = false
 
   const XLSX = await import('xlsx')
   const buf = await file.arrayBuffer()
@@ -26,16 +36,13 @@ async function onXlsSelected(e: Event) {
   const ws = wb.Sheets[wb.SheetNames[0]]
   const rows: any[] = XLSX.utils.sheet_to_json(ws, { defval: null })
 
-  // 只保留有效交易記錄
   const txns = rows.filter(r => r['交易類別'] && r['股票名稱'] && r['成交股數'] && r['成交單價'])
 
-  // 從股票名稱解析代號，例如 富邦NASDAQ(00662) → 00662
   function extractCode(name: string) {
     const m = name.match(/\(([^)]+)\)/)
     return m ? m[1] : name
   }
 
-  // 每一筆交易記錄獨立匯入
   importPreview.value = txns.map(r => {
     const name = r['股票名稱']
     const type = r['交易類別']
@@ -44,8 +51,7 @@ async function onXlsSelected(e: Event) {
     const dateRaw = r['成交日期']
     const dateStr = dateRaw instanceof Date
       ? dateRaw.toISOString().slice(0, 10)
-      : String(dateRaw).slice(0, 10)
-    // 賣出記錄用負股數表示
+      : String(dateRaw).replace(/\//g, '-').slice(0, 10)
     const finalShares = (type === '現股賣出') ? -shares : shares
     const code = extractCode(name)
     const leverageMultiplier = code.endsWith('L') ? 2 : code.endsWith('B') ? 0 : 1
@@ -204,6 +210,33 @@ async function submitForm() {
 
     <!-- 隱藏的 XLS 檔案輸入 -->
     <input ref="xlsFileInput" type="file" accept=".xls,.xlsx" class="hidden" @change="onXlsSelected" />
+
+    <!-- 券商選擇 Modal -->
+    <Teleport to="body">
+      <div v-if="showBrokerModal"
+        class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+        @click.self="showBrokerModal = false">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+          <h2 class="text-base font-semibold text-slate-800 mb-1">選擇券商格式</h2>
+          <p class="text-xs text-slate-400 mb-5">請選擇這份對帳單的來源券商</p>
+          <div class="space-y-2">
+            <button @click="parseAsFubon"
+              class="w-full flex items-center gap-3 px-4 py-3 border border-slate-200 rounded-xl hover:border-indigo-400 hover:bg-indigo-50 transition text-left">
+              <div class="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center shrink-0">
+                <svg class="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              </div>
+              <div>
+                <p class="text-sm font-medium text-slate-700">富邦對帳單</p>
+                <p class="text-xs text-slate-400">富邦證券 XLS 對帳單格式</p>
+              </div>
+            </button>
+          </div>
+          <button @click="showBrokerModal = false" class="mt-4 w-full text-xs text-slate-400 hover:text-slate-600 transition">取消</button>
+        </div>
+      </div>
+    </Teleport>
 
     <!-- XLS 匯入預覽 Modal -->
     <Transition name="fade">
