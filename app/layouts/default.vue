@@ -30,38 +30,65 @@ async function parseAsFubon() {
   if (!file) return
   showBrokerModal.value = false
 
-  const XLSX = await import('xlsx')
-  const buf = await file.arrayBuffer()
-  const wb = XLSX.read(buf, { type: 'array', cellDates: true })
-  const ws = wb.Sheets[wb.SheetNames[0]]
-  const rows: any[] = XLSX.utils.sheet_to_json(ws, { defval: null })
-
-  const txns = rows.filter(r => r['交易類別'] && r['股票名稱'] && r['成交股數'] && r['成交單價'])
+  const text = await file.text()
+  const isHtml = text.trimStart().startsWith('<')
 
   function extractCode(name: string) {
     const m = name.match(/\(([^)]+)\)/)
     return m ? m[1] : name
   }
 
-  importPreview.value = txns.map(r => {
-    const name = r['股票名稱']
-    const type = r['交易類別']
-    const shares = Number(r['成交股數'])
-    const price = Number(r['成交單價'])
-    const dateRaw = r['成交日期']
-    const dateStr = dateRaw instanceof Date
-      ? dateRaw.toISOString().slice(0, 10)
-      : String(dateRaw).replace(/\//g, '-').slice(0, 10)
-    const finalShares = (type === '現股賣出') ? -shares : shares
-    const code = extractCode(name)
+  function toDate(s: string) {
+    return s.replace(/\//g, '-').slice(0, 10)
+  }
+
+  let rows: { date: string; type: string; name: string; shares: number; price: number }[] = []
+
+  if (isHtml) {
+    // 富邦 HTML 偽裝 XLS：直接用 DOMParser 解析
+    const doc = new DOMParser().parseFromString(text, 'text/html')
+    const trs = doc.querySelectorAll('tr')
+    trs.forEach((tr, i) => {
+      if (i === 0) return // 略過標題行
+      const tds = tr.querySelectorAll('td')
+      if (tds.length < 5) return
+      const date = tds[0].textContent?.trim() ?? ''
+      const type = tds[1].textContent?.trim() ?? ''
+      const name = tds[2].textContent?.trim() ?? ''
+      const shares = parseFloat((tds[3].textContent ?? '').replace(/,/g, ''))
+      const price = parseFloat((tds[4].textContent ?? '').replace(/,/g, ''))
+      if (!date || !name || isNaN(shares) || isNaN(price)) return
+      rows.push({ date, type, name, shares, price })
+    })
+  } else {
+    // 一般 XLSX 格式
+    const XLSX = await import('xlsx')
+    const buf = await file.arrayBuffer()
+    const wb = XLSX.read(buf, { type: 'array', cellDates: true })
+    const ws = wb.Sheets[wb.SheetNames[0]]
+    const raw: any[] = XLSX.utils.sheet_to_json(ws, { defval: null })
+    rows = raw
+      .filter(r => r['交易類別'] && r['股票名稱'] && r['成交股數'] && r['成交單價'])
+      .map(r => ({
+        date: r['成交日期'] instanceof Date ? r['成交日期'].toISOString().slice(0, 10) : String(r['成交日期']),
+        type: r['交易類別'],
+        name: r['股票名稱'],
+        shares: Number(r['成交股數']),
+        price: Number(r['成交單價']),
+      }))
+  }
+
+  importPreview.value = rows.map(r => {
+    const finalShares = r.type === '現股賣出' ? -r.shares : r.shares
+    const code = extractCode(r.name)
     const leverageMultiplier = code.endsWith('L') ? 2 : code.endsWith('B') ? 0 : 1
     return {
       stockCode: code,
-      stockName: name.replace(/\([^)]*\)/, '').trim(),
+      stockName: r.name.replace(/\([^)]*\)/, '').trim(),
       shares: finalShares,
-      averageCost: price,
-      buyDate: dateStr,
-      tradeType: type,
+      averageCost: r.price,
+      buyDate: toDate(r.date),
+      tradeType: r.type,
       leverageMultiplier,
     }
   })
