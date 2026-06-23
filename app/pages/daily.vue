@@ -162,14 +162,19 @@ async function refreshWithSnapshot() {
       </div>
       <div class="flex items-center gap-2">
         <!-- 抓取當天數值 -->
-        <button @click="refreshWithSnapshot" :disabled="refreshing"
-          class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition">
-          <svg :class="refreshing ? 'animate-spin' : ''" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0" />
-          </svg>
-          {{ refreshing ? '抓取中…' : '抓取當天數值' }}
-        </button>
+        <div class="relative group">
+          <button @click="refreshWithSnapshot" :disabled="refreshing"
+            class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition">
+            <svg :class="refreshing ? 'animate-spin' : ''" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0" />
+            </svg>
+            {{ refreshing ? '抓取中…' : '抓取當天數值' }}
+          </button>
+          <div class="absolute left-0 top-full mt-1.5 z-50 hidden group-hover:block bg-slate-800 text-slate-100 text-xs rounded-lg px-2.5 py-1.5 whitespace-nowrap shadow-lg pointer-events-none">
+            計算當天的每日漲幅
+          </div>
+        </div>
         <!-- 歷史匯入按鈕 -->
         <button @click="runHistoryImport" :disabled="importing"
           class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-60 transition">
