@@ -81,6 +81,12 @@ async function remove(id: number, name: string) {
   await refresh()
 }
 
+async function removeAll() {
+  if (!confirm('確定刪除全部交易記錄？此操作無法復原。')) return
+  await $fetch('/api/stockholdings/all', { method: 'DELETE', headers: authHeaders.value as HeadersInit })
+  await refresh()
+}
+
 function money(v: any) { return Number(v).toLocaleString('zh-TW') }
 
 const refreshing = ref(false)
@@ -166,6 +172,13 @@ async function refreshPrices() {
       <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
         <h3 class="text-sm font-semibold text-slate-800">交易明細</h3>
         <div class="flex items-center gap-2">
+          <button @click="removeAll"
+            class="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-red-500 border border-red-200 rounded-lg hover:bg-red-50 transition">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+            全部刪除
+          </button>
           <button @click="refreshPrices" :disabled="refreshing"
             class="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-slate-500 border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition">
             <svg :class="refreshing ? 'animate-spin' : ''" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
