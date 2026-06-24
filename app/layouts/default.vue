@@ -214,6 +214,7 @@ const showModal = ref(false)
 const editingId = ref<number | null>(null)
 const lookingUp = ref(false)
 const lookupError = ref('')
+const isCostFocused = ref(false)
 
 const form = ref({ stockCode: '', stockName: '', shares: '', averageCost: '', costBasis: '', buyDate: today(), leverageMultiplier: 1, watermarkPrice: '', tradeType: 'buy' as 'buy' | 'sell', account: '' })
 
@@ -525,10 +526,10 @@ async function submitForm() {
                   <span v-else-if="form.averageCost && !editingId" class="ml-1 font-normal text-indigo-400">← 已帶入現價</span>
                 </label>
                 <input
-                  :value="form.averageCost !== '' ? Number(form.averageCost).toLocaleString('zh-TW') : ''"
+                  :value="isCostFocused ? form.averageCost : (form.averageCost !== '' ? Number(form.averageCost).toLocaleString('zh-TW') : '')"
                   type="text" inputmode="decimal" placeholder="輸入代號後自動帶入"
-                  @focus="(e: any) => { e.target.value = String(form.averageCost).replace(/,/g, '') }"
-                  @blur="(e: any) => { const n = parseFloat(e.target.value.replace(/,/g,'')); if (!isNaN(n)) form.averageCost = String(n) }"
+                  @focus="(e: any) => { isCostFocused = true; e.target.value = String(form.averageCost).replace(/,/g, '') }"
+                  @blur="(e: any) => { isCostFocused = false; const n = parseFloat(e.target.value.replace(/,/g,'')); if (!isNaN(n)) form.averageCost = String(n) }"
                   @input="(e: any) => { form.averageCost = e.target.value.replace(/,/g, '') }"
                   class="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300" />
               </div>
