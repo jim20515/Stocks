@@ -20,17 +20,11 @@ const minFee = ref(20)
 const stockTaxRate = ref(0.3)
 const etfTaxRate = ref(0.1)
 
+const { updating: updatingAllLatest, progress: updateAllProgress } = useBacktestUpdate()
 const loading = ref(false)
-const updatingAllLatest = ref(false)
-const updateAllProgress = ref('')
-const updateAllError = ref('')
 const lookingUpFirstDate = ref(false)
 const firstDateHint = ref('')
 const lastLookupCode = ref('')
-const tooltip = ref<{ text: string; x: number; y: number } | null>(null)
-function showTip(e: MouseEvent, text: string) { tooltip.value = { text, x: e.clientX, y: e.clientY + 20 } }
-function hideTip() { tooltip.value = null }
-
 const progressText = ref('')
 const error = ref('')
 const showResult = ref(false)
@@ -143,53 +137,6 @@ const result = computed(() => {
   }
 })
 
-function nextDate(dateStr: string) {
-  const d = new Date(dateStr)
-  d.setDate(d.getDate() + 1)
-  return d.toLocaleDateString('sv-SE', { timeZone: 'Asia/Taipei' })
-}
-
-async function updateAllLatestPrices() {
-  updatingAllLatest.value = true
-  updateAllError.value = ''
-  updateAllProgress.value = '正在取得資料庫股票清單...'
-  try {
-    const { codes } = await $fetch<{ codes: string[] }>('/api/backtest/all-codes', {
-      headers: authHeaders.value as HeadersInit,
-    })
-    if (!codes.length) { updateAllProgress.value = '資料庫尚無股票資料'; return }
-
-    for (let i = 0; i < codes.length; i++) {
-      const c = codes[i]
-      updateAllProgress.value = `更新中 ${i + 1}/${codes.length}：${c}`
-      try {
-        const latest = await $fetch<{ latestDate: string | null }>('/api/backtest/latest-date', {
-          headers: authHeaders.value as HeadersInit,
-          query: { code: c },
-        })
-        if (latest.latestDate && latest.latestDate >= today) continue
-        const updateStart = latest.latestDate ? nextDate(latest.latestDate) : '2000-01-01'
-        let cursor: string | null = updateStart
-        let guard = 0
-        while (cursor && guard < 6) {
-          const res = await $fetch<any>('/api/backtest/history', {
-            method: 'POST',
-            headers: authHeaders.value as HeadersInit,
-            body: { code: c, startDate: cursor, endDate: today, maxMonths: 6 },
-          })
-          cursor = res.nextStartDate
-          guard++
-        }
-      } catch { /* 單檔失敗不中斷 */ }
-    }
-    updateAllProgress.value = `完成，共更新 ${codes.length} 支股票`
-  } catch (e: any) {
-    updateAllError.value = e?.data?.message ?? '更新失敗'
-  } finally {
-    updatingAllLatest.value = false
-  }
-}
-
 async function runBacktest() {
   if (!code.value.trim()) {
     error.value = '請輸入股票代號'
@@ -228,18 +175,6 @@ async function runBacktest() {
 <template>
   <div class="space-y-5">
     <div class="bg-white border border-slate-200 rounded-xl p-5">
-      <div class="flex justify-end mb-3">
-        <button @click="updateAllLatestPrices" :disabled="updatingAllLatest"
-          @mouseenter="showTip($event, '更新所有資料庫股票最新價格')"
-          @mouseleave="hideTip"
-          class="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-60 transition">
-          <svg :class="updatingAllLatest ? 'animate-spin' : ''" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0" />
-          </svg>
-          {{ updatingAllLatest ? '更新中...' : '更新最新價格' }}
-        </button>
-      </div>
       <div class="space-y-3">
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[minmax(180px,250px)_minmax(180px,250px)_minmax(180px,250px)_minmax(180px,250px)_auto] gap-3 lg:items-end pb-8">
           <div class="relative">
@@ -284,7 +219,6 @@ async function runBacktest() {
         </div>
       </div>
       <p v-if="updateAllProgress" class="text-xs text-indigo-500 mt-3">{{ updateAllProgress }}</p>
-      <p v-if="updateAllError" class="text-xs text-red-500 mt-3">{{ updateAllError }}</p>
       <p v-if="progressText" class="text-xs text-indigo-500 mt-3">{{ progressText }}</p>
       <p v-if="error" class="text-xs text-red-500 mt-3">{{ error }}</p>
     </div>
@@ -428,12 +362,4 @@ async function runBacktest() {
       </table>
     </div>
   </div>
-
-  <Teleport to="body">
-    <div v-if="tooltip"
-      class="fixed z-[9999] pointer-events-none px-2.5 py-1.5 bg-slate-800 text-slate-100 text-xs rounded-lg shadow-lg whitespace-nowrap -translate-x-1/2"
-      :style="{ left: tooltip.x + 'px', top: tooltip.y + 'px' }">
-      {{ tooltip.text }}
-    </div>
-  </Teleport>
 </template>

@@ -2,6 +2,7 @@
 const route = useRoute()
 const emit = defineEmits(['add', 'import', 'logout', 'menu'])
 const { user } = useAuth()
+const { updating: backtestUpdating, progress: backtestProgress, updateAllLatestPrices } = useBacktestUpdate()
 
 const titleMap: Record<string, string> = {
   '/':           '總覽儀表板',
@@ -9,6 +10,7 @@ const titleMap: Record<string, string> = {
   '/allocation': '資產配置',
   '/watermark':  '水位分析',
   '/backtest':   '回測分析',
+  '/backtest/history': '更新歷史數據',
   '/lifegoal':   '人生目標',
   '/daily':      '每日漲幅',
   '/accounts':   '帳戶管理',
@@ -73,6 +75,17 @@ function hideTip() { tooltip.value = null }
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
             </svg>
             新增交易
+          </button>
+        </template>
+        <template v-if="route.path === '/backtest'">
+          <button @click="updateAllLatestPrices" :disabled="backtestUpdating"
+            @mouseenter="showTip($event, '更新所有資料庫股票最新價格')"
+            @mouseleave="hideTip"
+            class="hidden sm:inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-60 transition">
+            <svg :class="backtestUpdating ? 'animate-spin' : ''" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0" />
+            </svg>
+            {{ backtestUpdating ? '更新中...' : '更新最新價格' }}
           </button>
         </template>
         <div class="flex items-center gap-2 border-l border-slate-200 pl-2 sm:pl-3 ml-1">
