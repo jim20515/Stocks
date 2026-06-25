@@ -222,15 +222,7 @@ async function updateLatestPriceData() {
             </span>
           </p>
         </div>
-        <button @click="updateLatestPriceData" :disabled="updatingLatestPrices || updatingPrices"
-          class="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-60 transition">
-          <svg :class="updatingLatestPrices ? 'animate-spin' : ''" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0" />
-          </svg>
-          {{ updatingLatestPrices ? '更新中...' : '更新最新價格' }}
-        </button>
-        <button @click="updatePriceData" :disabled="updatingPrices || updatingLatestPrices"
+        <button @click="updatePriceData" :disabled="updatingPrices"
           class="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 disabled:opacity-60 transition">
           <svg :class="updatingPrices ? 'animate-spin' : ''" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
