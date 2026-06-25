@@ -17,6 +17,7 @@ export default defineEventHandler(async (event) => {
     .gte('date', startDate)
     .lte('date', endDate)
     .order('date')
+    .limit(10000)
 
   if (error) throw createError({ statusCode: 500, message: error.message })
 
