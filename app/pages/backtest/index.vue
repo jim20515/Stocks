@@ -241,7 +241,7 @@ async function runBacktest() {
         </button>
       </div>
       <div class="space-y-3">
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[minmax(180px,250px)_minmax(180px,250px)_minmax(180px,250px)_minmax(180px,250px)_auto] gap-3 lg:items-end">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[minmax(180px,250px)_minmax(180px,250px)_minmax(180px,250px)_minmax(180px,250px)_auto] gap-3 lg:items-end pb-8">
           <div class="relative">
             <label class="block text-xs font-medium text-slate-600 mb-1.5">股票代號</label>
             <input v-model="code" type="text" placeholder="例如 2330、0050、009816"
