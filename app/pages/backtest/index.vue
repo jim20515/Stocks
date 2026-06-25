@@ -176,22 +176,13 @@ async function runBacktest() {
   <div class="space-y-5">
     <div class="bg-white border border-slate-200 rounded-xl p-5">
       <div class="space-y-3">
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[minmax(180px,250px)_minmax(180px,250px)_minmax(180px,250px)_minmax(180px,250px)_auto] gap-3 lg:items-end pb-8">
-          <div class="relative">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[minmax(180px,250px)_minmax(180px,250px)_minmax(180px,250px)_minmax(180px,250px)_auto] gap-3 lg:items-end">
+          <div>
             <label class="block text-xs font-medium text-slate-600 mb-1.5">股票代號</label>
             <input v-model="code" type="text" placeholder="例如 2330、0050、009816"
               @blur="lookupFirstDate"
               @keyup.enter="lookupFirstDate"
               class="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300 uppercase" />
-            <p v-if="code.trim().length >= 4 || firstDateHint"
-              class="absolute left-0 top-full z-10 mt-1 w-full text-xs text-slate-400 leading-4">
-              <span v-if="code.trim().length >= 4">
-                系統判斷：{{ inferredSecurityLabel }}，賣出交易稅率 {{ taxRate }}%
-              </span>
-              <span v-if="firstDateHint" class="block" :class="lookingUpFirstDate ? 'text-indigo-500' : firstDateHint.includes('已自動') ? 'text-green-600' : 'text-slate-400'">
-                {{ firstDateHint }}
-              </span>
-            </p>
           </div>
           <div>
             <label class="block text-xs font-medium text-slate-600 mb-1.5">開始日期</label>
@@ -218,9 +209,13 @@ async function runBacktest() {
           </button>
         </div>
       </div>
-      <p v-if="updateAllProgress" class="text-xs text-indigo-500 mt-3">{{ updateAllProgress }}</p>
-      <p v-if="progressText" class="text-xs text-indigo-500 mt-3">{{ progressText }}</p>
-      <p v-if="error" class="text-xs text-red-500 mt-3">{{ error }}</p>
+      <div v-if="code.trim().length >= 4 || firstDateHint" class="mt-2 text-xs leading-5 text-slate-400">
+        <span v-if="code.trim().length >= 4">系統判斷：{{ inferredSecurityLabel }}，賣出交易稅率 {{ taxRate }}%</span>
+        <span v-if="firstDateHint" class="block" :class="lookingUpFirstDate ? 'text-indigo-500' : firstDateHint.includes('已自動') ? 'text-green-600' : 'text-slate-400'">{{ firstDateHint }}</span>
+      </div>
+      <p v-if="updateAllProgress" class="text-xs text-indigo-500 mt-2">{{ updateAllProgress }}</p>
+      <p v-if="progressText" class="text-xs text-indigo-500 mt-2">{{ progressText }}</p>
+      <p v-if="error" class="text-xs text-red-500 mt-2">{{ error }}</p>
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
