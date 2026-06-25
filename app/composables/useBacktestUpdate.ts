@@ -34,7 +34,7 @@ export function useBacktestUpdate() {
           const updateStart = latest.latestDate ? nextDate(latest.latestDate) : '2000-01-01'
           let cursor: string | null = updateStart
           let guard = 0
-          while (cursor && guard < 6) {
+          while (cursor && guard < 100) {
             const res = await $fetch<any>('/api/backtest/history', {
               method: 'POST',
               headers: authHeaders.value as HeadersInit,
