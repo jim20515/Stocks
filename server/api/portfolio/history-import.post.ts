@@ -12,33 +12,65 @@ export default defineEventHandler(async (event) => {
 
   if (!holdings?.length) return { success: true, pricesInserted: 0, snapshotsInserted: 0, tradingDays: 0 }
 
-  const allCodes = [...new Set(holdings.map(h => h.stock_code.toUpperCase()))]
-
   const mm = String(month).padStart(2, '0')
+  const monthStart = `${year}-${mm}-01`
+  const lastDay = new Date(year, month, 0).getDate()
+  const monthEnd = `${year}-${mm}-${String(lastDay).padStart(2, '0')}`
   const dateStr = `${year}${mm}01`
+  const activeCodes = [...new Set(holdings.map(h => h.stock_code.toUpperCase()))]
+    .filter((code) => {
+      const rows = holdings.filter(h => h.stock_code.toUpperCase() === code)
+      const sharesBeforeMonth = rows
+        .filter(h => h.buy_date < monthStart)
+        .reduce((sum, h) => sum + Number(h.shares), 0)
+      const hasTradeInMonth = rows.some(h => h.buy_date >= monthStart && h.buy_date <= monthEnd)
+
+      return sharesBeforeMonth > 0 || hasTradeInMonth
+    })
+
+  if (!activeCodes.length) {
+    return {
+      success: true,
+      pricesInserted: 0,
+      snapshotsInserted: 0,
+      tradingDays: 0,
+      debug: [`${year}-${mm}: 無持股或交易，略過`],
+    }
+  }
 
   let pricesInserted = 0
   const debugLog: string[] = []
   // 直接在記憶體中建 dayMap，不在 INSERT 後再 SELECT
   const dayMap: Record<string, Record<string, number>> = {}
+  const priorPriceMap: Record<string, number> = {}
 
-  for (const code of allCodes) {
-    // 查 DB 這個月是否已有資料
+  for (const code of activeCodes) {
+    // 先載入 DB 既有資料；後續仍會重新抓當月資料補齊，避免「只有部分資料卻整月跳過」。
     const { data: existing } = await client
       .from('stock_daily_prices')
       .select('date, close_price')
       .eq('stock_code', code)
-      .gte('date', `${year}-${mm}-01`)
-      .lte('date', `${year}-${mm}-31`)
+      .gte('date', monthStart)
+      .lte('date', monthEnd)
 
     if (existing?.length) {
-      debugLog.push(`${code}: DB已有${existing.length}筆，跳過`)
-      // 已有資料也要加入 dayMap
+      debugLog.push(`${code}: DB已有${existing.length}筆，將重新抓取補齊`)
       for (const row of existing) {
         if (!dayMap[row.date]) dayMap[row.date] = {}
         dayMap[row.date][code] = Number(row.close_price)
       }
-      continue
+    }
+
+    // 月初前最後一筆價格，給月初或個別交易日缺價時沿用，避免少算該檔市值。
+    const { data: priorPriceArr } = await client
+      .from('stock_daily_prices')
+      .select('close_price')
+      .eq('stock_code', code)
+      .lt('date', monthStart)
+      .order('date', { ascending: false })
+      .limit(1)
+    if (priorPriceArr?.[0]?.close_price != null) {
+      priorPriceMap[code] = Number(priorPriceArr[0].close_price)
     }
 
     // TWSE
@@ -137,35 +169,44 @@ export default defineEventHandler(async (event) => {
     .from('portfolio_daily_snapshot')
     .select('date, total_cost')
     .eq('user_id', userId)
-    .lt('date', `${year}-${mm}-01`)
+    .lt('date', monthStart)
     .order('date', { ascending: false })
     .limit(1)
   const lastSnap = lastSnapArr?.[0] ?? null
 
   let prevTradingDay: string | null = lastSnap?.date ?? null
 
-  // Rolling WACC：初始化到上個月為止的所有交易
-  const waccMap: Record<string, { totalCost: number; totalShares: number }> = {}
+  // Rolling WACC：依帳戶初始化到上個月為止的所有交易，與持股管理/當日快照一致。
+  const waccMap: Record<string, Record<string, { totalCost: number; totalShares: number }>> = {}
   for (const h of holdings.filter(h => !prevTradingDay || h.buy_date <= prevTradingDay)) {
     const code = h.stock_code.toUpperCase()
-    if (!waccMap[code]) waccMap[code] = { totalCost: 0, totalShares: 0 }
+    const acct = h.account ?? ''
+    if (!waccMap[acct]) waccMap[acct] = {}
+    if (!waccMap[acct][code]) waccMap[acct][code] = { totalCost: 0, totalShares: 0 }
     if (h.shares > 0) {
-      waccMap[code].totalCost += h.shares * Number(h.average_cost)
-      waccMap[code].totalShares += h.shares
+      waccMap[acct][code].totalCost += h.shares * Number(h.average_cost)
+      waccMap[acct][code].totalShares += h.shares
     } else {
-      const wacc = waccMap[code].totalShares > 0
-        ? waccMap[code].totalCost / waccMap[code].totalShares
+      const entry = waccMap[acct][code]
+      const wacc = entry.totalShares > 0
+        ? entry.totalCost / entry.totalShares
         : Number(h.average_cost)
       const abs = Math.abs(h.shares)
-      waccMap[code].totalCost = Math.max(0, waccMap[code].totalCost - wacc * abs)
-      waccMap[code].totalShares = Math.max(0, waccMap[code].totalShares - abs)
+      entry.totalCost = Math.max(0, entry.totalCost - wacc * abs)
+      entry.totalShares = Math.max(0, entry.totalShares - abs)
     }
   }
   let runningTotalCost = lastSnap?.total_cost ?? 0
 
   const snapshots: any[] = []
+  const lastKnownPrice: Record<string, number> = { ...priorPriceMap }
+  const missingPriceLog = new Set<string>()
 
   for (const date of tradingDays) {
+    for (const [code, price] of Object.entries(dayMap[date] ?? {})) {
+      lastKnownPrice[code] = price
+    }
+
     // 計算當日淨持股市值
     const netMap: Record<string, number> = {}
     for (const h of holdings.filter(h => h.buy_date <= date)) {
@@ -175,8 +216,12 @@ export default defineEventHandler(async (event) => {
     let totalStock = 0
     for (const [code, netShares] of Object.entries(netMap)) {
       if (netShares <= 0) continue
-      const price = dayMap[date]?.[code]
-      if (price != null) totalStock += price * netShares
+      const price = dayMap[date]?.[code] ?? lastKnownPrice[code]
+      if (price != null) {
+        totalStock += price * netShares
+      } else {
+        missingPriceLog.add(`${date}: ${code} 缺少歷史價格，該日略過此檔`)
+      }
     }
     if (totalStock === 0) continue
 
@@ -189,23 +234,26 @@ export default defineEventHandler(async (event) => {
     let dailyTradeAmount = 0
     for (const h of todayTrades) {
       const code = h.stock_code.toUpperCase()
-      if (!waccMap[code]) waccMap[code] = { totalCost: 0, totalShares: 0 }
+      const acct = h.account ?? ''
+      if (!waccMap[acct]) waccMap[acct] = {}
+      if (!waccMap[acct][code]) waccMap[acct][code] = { totalCost: 0, totalShares: 0 }
       if (h.shares > 0) {
         const cost = h.shares * Number(h.average_cost)
-        waccMap[code].totalCost += cost
-        waccMap[code].totalShares += h.shares
+        waccMap[acct][code].totalCost += cost
+        waccMap[acct][code].totalShares += h.shares
         runningTotalCost += cost          // 買入：加買入金額
         dailyTradeAmount += cost
       } else {
-        const wacc = waccMap[code].totalShares > 0
-          ? waccMap[code].totalCost / waccMap[code].totalShares
+        const entry = waccMap[acct][code]
+        const wacc = entry.totalShares > 0
+          ? entry.totalCost / entry.totalShares
           : Number(h.average_cost)
         const abs = Math.abs(h.shares)
         const costBasis = wacc * abs
-        waccMap[code].totalCost = Math.max(0, waccMap[code].totalCost - costBasis)
-        waccMap[code].totalShares = Math.max(0, waccMap[code].totalShares - abs)
+        entry.totalCost = Math.max(0, entry.totalCost - costBasis)
+        entry.totalShares = Math.max(0, entry.totalShares - abs)
         runningTotalCost -= costBasis     // 賣出：扣均成本
-        dailyTradeAmount += h.shares * Number(h.average_cost)  // h.shares 為負，結果為負數
+        dailyTradeAmount -= costBasis
       }
     }
 
@@ -222,6 +270,11 @@ export default defineEventHandler(async (event) => {
   if (snapshots.length) {
     await client.from('portfolio_daily_snapshot')
       .upsert(snapshots, { onConflict: 'user_id,date' })
+  }
+
+  if (missingPriceLog.size) {
+    debugLog.push(...Array.from(missingPriceLog).slice(0, 50))
+    if (missingPriceLog.size > 50) debugLog.push(`另有 ${missingPriceLog.size - 50} 筆缺價訊息省略`)
   }
 
   const pricesTotal = Object.values(dayMap).reduce((s, v) => s + Object.keys(v).length, 0)

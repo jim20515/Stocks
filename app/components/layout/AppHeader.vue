@@ -8,7 +8,10 @@ const titleMap: Record<string, string> = {
   '/stocks':     '持股管理',
   '/allocation': '資產配置',
   '/watermark':  '水位分析',
+  '/backtest':   '回測分析',
   '/lifegoal':   '人生目標',
+  '/daily':      '每日漲幅',
+  '/accounts':   '帳戶管理',
 }
 
 const pageTitle = computed(() => titleMap[route.path] ?? '股票看板')
