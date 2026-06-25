@@ -34,7 +34,7 @@ function parseMisPrice(item: MisItem): number | null {
 
 function codeFromCh(ch: string | undefined): string | null {
   if (!ch) return null
-  const m = ch.match(/(?:tse|otc)_(.+?)\.tw/)
+  const m = ch.match(/(?:tse|otc)_(.+?)\.tw/) ?? ch.match(/^(.+?)\.tw$/)
   return m ? m[1].toUpperCase() : null
 }
 
@@ -115,6 +115,36 @@ async function fetchYahooPrices(codes: string[]): Promise<Record<string, number>
   return result
 }
 
+async function fetchYahooPriceInfos(codes: string[]): Promise<Record<string, PriceInfo>> {
+  const result: Record<string, PriceInfo> = {}
+  const BATCH = 20
+  for (let i = 0; i < codes.length; i += BATCH) {
+    const batch = codes.slice(i, i + BATCH)
+    await Promise.all(batch.map(async (code) => {
+      for (const suffix of ['TW', 'TWO']) {
+        try {
+          const data = await $fetch<any>(
+            `https://query2.finance.yahoo.com/v8/finance/chart/${code}.${suffix}?interval=1m&range=1d`,
+            { headers: { 'User-Agent': 'Mozilla/5.0' } }
+          )
+          const meta = data?.chart?.result?.[0]?.meta
+          const price = Number(meta?.regularMarketPrice)
+          const prevClose = Number(meta?.previousClose ?? meta?.chartPreviousClose)
+          if (!Number.isFinite(price) || price <= 0) continue
+
+          const validPrevClose = Number.isFinite(prevClose) && prevClose > 0 ? prevClose : null
+          const changePct = validPrevClose
+            ? Math.round((price - validPrevClose) / validPrevClose * 10000) / 100
+            : null
+          result[code.toUpperCase()] = { price, prevClose: validPrevClose, changePct }
+          break
+        } catch {}
+      }
+    }))
+  }
+  return result
+}
+
 /** 批次取得多支股票今日股價（含昨收、漲跌幅），主要來源為 MIS */
 export async function fetchPricesWithChange(codes: string[]): Promise<Record<string, PriceInfo>> {
   const result: Record<string, PriceInfo> = {}
@@ -146,10 +176,7 @@ export async function fetchPricesWithChange(codes: string[]): Promise<Record<str
   // 抓不到的 → Yahoo（無昨收資訊）
   const missing = codes.filter(c => !(c.toUpperCase() in result))
   if (missing.length) {
-    const yahooResult = await fetchYahooPrices(missing)
-    for (const [code, price] of Object.entries(yahooResult)) {
-      result[code] = { price, prevClose: null, changePct: null }
-    }
+    Object.assign(result, await fetchYahooPriceInfos(missing))
   }
 
   // 還找不到的 → TWSE 月報備援

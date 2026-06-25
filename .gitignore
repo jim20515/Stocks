@@ -22,3 +22,13 @@ logs
 .env
 .env.*
 !.env.example
+
+# Office temp files
+~$*
+*.tmp
+
+# Test results
+test-results/
+
+# Scripts & screenshots
+scripts/screenshots/

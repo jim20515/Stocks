@@ -3,6 +3,14 @@ import { h } from 'vue'
 
 const route = useRoute()
 const isActive = (path: string) => route.path === path
+const isGroupActive = (paths: string[]) => paths.some(path => route.path === path || route.path.startsWith(`${path}/`))
+const expandedGroups = ref<Record<string, boolean>>({
+  backtest: route.path.startsWith('/backtest'),
+})
+
+watch(() => route.path, (path) => {
+  if (path.startsWith('/backtest')) expandedGroups.value.backtest = true
+})
 
 const props = defineProps<{ open?: boolean }>()
 const emit = defineEmits(['close'])
@@ -38,9 +46,13 @@ const navItems = [
     icon: icon('M13 7h8m0 0v8m0-8l-8 8-4-4-6 6'),
   },
   {
-    path: '/backtest',
+    key: 'backtest',
     label: '回測分析',
     icon: icon('M3 3v18h18M7 15l4-4 3 3 5-7'),
+    children: [
+      { path: '/backtest/history', label: '更新歷史數據' },
+      { path: '/backtest', label: '回測分析' },
+    ],
   },
   {
     path: '/lifegoal',
@@ -75,8 +87,40 @@ const navItems = [
     <nav class="flex-1 px-3 py-4 overflow-y-auto">
       <p class="px-3 mb-2 text-xs font-medium text-slate-400 uppercase tracking-wider">主選單</p>
       <ul class="space-y-0.5">
-        <li v-for="item in navItems" :key="item.path">
+        <li v-for="item in navItems" :key="item.path ?? item.key">
+          <template v-if="'children' in item">
+            <button
+              type="button"
+              class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors"
+              :class="isGroupActive(item.children.map(child => child.path))
+                ? 'bg-indigo-50 text-indigo-600'
+                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-800'"
+              @click="expandedGroups[item.key] = !expandedGroups[item.key]"
+            >
+              <component :is="item.icon" class="w-5 h-5 shrink-0" />
+              <span class="flex-1 text-left">{{ item.label }}</span>
+              <svg class="w-4 h-4 transition-transform" :class="expandedGroups[item.key] ? 'rotate-180' : ''"
+                fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            <div v-if="expandedGroups[item.key]" class="mt-1 ml-8 space-y-0.5">
+              <NuxtLink
+                v-for="child in item.children"
+                :key="child.path"
+                :to="child.path"
+                class="block px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+                :class="isActive(child.path)
+                  ? 'bg-indigo-50 text-indigo-600'
+                  : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'"
+                @click="emit('close')"
+              >
+                {{ child.label }}
+              </NuxtLink>
+            </div>
+          </template>
           <NuxtLink
+            v-else
             :to="item.path"
             class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors"
             :class="isActive(item.path)
