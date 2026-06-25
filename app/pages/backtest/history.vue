@@ -13,6 +13,9 @@ const startDate = ref('2004-01-01')
 const endDate = ref(today)
 const updatingPrices = ref(false)
 const updatingLatestPrices = ref(false)
+const tooltip = ref<{ text: string; x: number; y: number } | null>(null)
+function showTip(e: MouseEvent, text: string) { tooltip.value = { text, x: e.clientX, y: e.clientY + 20 } }
+function hideTip() { tooltip.value = null }
 const lookingUpFirstDate = ref(false)
 const firstDateHint = ref('')
 const lastLookupCode = ref('')
@@ -192,7 +195,7 @@ async function updateLatestPriceData() {
     }
 
     await loadCurrentRangePrices()
-    if (!prices.value.length) error.value = '資料庫尚無此代號價格，請先更新區間全部價格'
+    if (!prices.value.length) error.value = '資料庫尚無此代號價格，請先更新股票歷史數據'
   } catch (e: any) {
     error.value = e?.data?.message ?? '最新價格更新失敗'
   } finally {
@@ -223,12 +226,14 @@ async function updateLatestPriceData() {
           </p>
         </div>
         <button @click="updatePriceData" :disabled="updatingPrices"
+          @mouseenter="showTip($event, '當選擇一檔股票更新歷史數據後，接下來只要在回測分析的更新最新價格按鈕更新，就可以得到最新價格')"
+          @mouseleave="hideTip"
           class="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 disabled:opacity-60 transition">
           <svg :class="updatingPrices ? 'animate-spin' : ''" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
               d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
           </svg>
-          {{ updatingPrices ? '更新中...' : '更新區間全部價格' }}
+          {{ updatingPrices ? '更新中...' : '更新股票歷史數據' }}
         </button>
       </div>
       <p v-if="progressText" class="text-xs text-indigo-500 mt-3">{{ progressText }}</p>
@@ -242,4 +247,12 @@ async function updateLatestPriceData() {
       </div>
     </div>
   </div>
+
+  <Teleport to="body">
+    <div v-if="tooltip"
+      class="fixed z-[9999] pointer-events-none px-2.5 py-1.5 bg-slate-800 text-slate-100 text-xs rounded-lg shadow-lg max-w-xs -translate-x-1/2"
+      :style="{ left: tooltip.x + 'px', top: tooltip.y + 'px' }">
+      {{ tooltip.text }}
+    </div>
+  </Teleport>
 </template>
