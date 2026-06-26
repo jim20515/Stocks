@@ -20,8 +20,14 @@ const minFee = ref(20)
 const stockTaxRate = ref(0.3)
 const etfTaxRate = ref(0.1)
 
+type DividendRow = {
+  ex_date: string
+  dividend_per_share: number
+}
+
 const { updating: updatingAllLatest, progress: updateAllProgress } = useBacktestUpdate()
 const loading = ref(false)
+const updatingDividends = ref(false)
 const lookingUpFirstDate = ref(false)
 const firstDateHint = ref('')
 const lastLookupCode = ref('')
@@ -29,6 +35,7 @@ const progressText = ref('')
 const error = ref('')
 const showResult = ref(false)
 const prices = ref<PriceRow[]>([])
+const dividends = ref<DividendRow[]>([])
 let lookupTimer: ReturnType<typeof setTimeout> | null = null
 
 const firstPrice = computed(() => prices.value[0] ?? null)
@@ -109,20 +116,53 @@ const result = computed(() => {
   const estimatedBuyFee = costMode.value === 'none'
     ? 0
     : Math.max(minFee.value, initialCapital.value * (feeRate.value / 100))
-  const shares = Math.floor((initialCapital.value - estimatedBuyFee) / buyPrice)
-  const buyAmount = shares * buyPrice
+  const initialShares = Math.floor((initialCapital.value - estimatedBuyFee) / buyPrice)
+  const buyAmount = initialShares * buyPrice
   const buyFee = calcFee(buyAmount)
   const invested = buyAmount + buyFee
 
-  const sellAmount = shares * sellPrice
+  // 配息計算：篩出持有期間內有效除息日
+  const priceMap = new Map(prices.value.map(p => [p.date, Number(p.close_price)]))
+  const divInPeriod = dividends.value.filter(d =>
+    d.ex_date >= firstPrice.value!.date && d.ex_date <= lastPrice.value!.date,
+  )
+
+  let totalDividendCash = 0
+  let finalShares = initialShares
+  let leftoverCash = 0
+  const dividendEvents: { ex_date: string; amount: number; sharesAdded?: number }[] = []
+
+  if (dividendMode.value === 'cash') {
+    for (const d of divInPeriod) {
+      const cash = initialShares * d.dividend_per_share
+      totalDividendCash += cash
+      dividendEvents.push({ ex_date: d.ex_date, amount: cash })
+    }
+  } else {
+    // 再投入：用除息日收盤價買回（不強制整張，以股為單位）
+    let currentShares = initialShares
+    for (const d of divInPeriod) {
+      const exPrice = priceMap.get(d.ex_date) ?? sellPrice
+      const cash = currentShares * d.dividend_per_share + leftoverCash
+      const additionalShares = Math.floor(cash / exPrice)
+      leftoverCash = cash - additionalShares * exPrice
+      currentShares += additionalShares
+      dividendEvents.push({ ex_date: d.ex_date, amount: cash, sharesAdded: additionalShares })
+    }
+    finalShares = currentShares
+    totalDividendCash = leftoverCash
+  }
+
+  const sellAmount = finalShares * sellPrice
   const sellFee = calcFee(sellAmount)
   const sellTax = costMode.value === 'none' ? 0 : sellAmount * (taxRate.value / 100)
-  const finalValue = sellAmount - sellFee - sellTax
+  const finalValue = sellAmount - sellFee - sellTax + (dividendMode.value === 'cash' ? totalDividendCash : leftoverCash)
   const profit = finalValue - invested
   const returnPct = invested > 0 ? profit / invested * 100 : null
 
   return {
-    shares,
+    shares: initialShares,
+    finalShares,
     buyPrice,
     sellPrice,
     buyAmount,
@@ -131,6 +171,8 @@ const result = computed(() => {
     sellAmount,
     sellFee,
     sellTax,
+    totalDividendCash,
+    dividendEvents,
     finalValue,
     profit,
     returnPct,
@@ -147,19 +189,25 @@ async function runBacktest() {
   error.value = ''
   showResult.value = true
   prices.value = []
+  dividends.value = []
   progressText.value = '從資料庫讀取回測資料...'
 
   try {
-    const res = await $fetch<any>('/api/backtest/prices', {
-      headers: authHeaders.value as HeadersInit,
-      query: {
-        code: code.value.trim().toUpperCase(),
-        startDate: startDate.value,
-        endDate: endDate.value,
-      },
-    })
+    const normalizedCode = code.value.trim().toUpperCase()
+    const [priceRes, divRes] = await Promise.all([
+      $fetch<any>('/api/backtest/prices', {
+        headers: authHeaders.value as HeadersInit,
+        query: { code: normalizedCode, startDate: startDate.value, endDate: endDate.value },
+      }),
+      $fetch<any>('/api/backtest/dividends', {
+        headers: authHeaders.value as HeadersInit,
+        query: { code: normalizedCode, startDate: startDate.value, endDate: endDate.value },
+      }),
+    ])
 
-    prices.value = res.prices ?? []
+    prices.value = priceRes.prices ?? []
+    dividends.value = divRes.dividends ?? []
+
     if (!prices.value.length) {
       error.value = '資料庫尚無此區間價格，請先到「更新歷史數據」更新價格'
     }
@@ -168,6 +216,28 @@ async function runBacktest() {
   } finally {
     loading.value = false
     progressText.value = ''
+  }
+}
+
+async function updateDividends() {
+  if (updatingDividends.value) return
+  updatingDividends.value = true
+  try {
+    const normalizedCode = code.value.trim().toUpperCase()
+    await $fetch('/api/backtest/dividends-update', {
+      method: 'POST',
+      headers: authHeaders.value as HeadersInit,
+      body: { code: normalizedCode },
+    })
+    const divRes = await $fetch<any>('/api/backtest/dividends', {
+      headers: authHeaders.value as HeadersInit,
+      query: { code: normalizedCode, startDate: startDate.value, endDate: endDate.value },
+    })
+    dividends.value = divRes.dividends ?? []
+  } catch (e: any) {
+    error.value = e?.data?.message ?? '配息資料更新失敗'
+  } finally {
+    updatingDividends.value = false
   }
 }
 </script>
@@ -240,23 +310,36 @@ async function runBacktest() {
       </section>
 
       <section class="bg-white border border-slate-200 rounded-xl p-5">
-        <h3 class="text-sm font-semibold text-slate-800 mb-3">配息處理</h3>
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-sm font-semibold text-slate-800">配息處理</h3>
+          <button v-if="showResult && code.trim().length >= 4"
+            @click="updateDividends" :disabled="updatingDividends"
+            class="text-xs text-indigo-500 hover:text-indigo-700 disabled:opacity-50">
+            {{ updatingDividends ? '更新中...' : '更新配息資料' }}
+          </button>
+        </div>
         <div class="space-y-2">
-          <label class="flex gap-3 rounded-lg border border-slate-200 p-3">
+          <label class="flex gap-3 rounded-lg border border-slate-200 p-3 cursor-pointer">
             <input v-model="dividendMode" type="radio" value="cash" class="mt-1" />
             <span>
               <span class="block text-sm font-medium text-slate-800">領現金</span>
-              <span class="block text-xs text-slate-500 mt-0.5">配息進入現金部位。此版尚未接配息資料，因此目前不影響計算。</span>
+              <span class="block text-xs text-slate-500 mt-0.5">配息進入現金部位，期末一次計入損益。</span>
             </span>
           </label>
-          <label class="flex gap-3 rounded-lg border border-slate-200 p-3">
+          <label class="flex gap-3 rounded-lg border border-slate-200 p-3 cursor-pointer">
             <input v-model="dividendMode" type="radio" value="reinvest" class="mt-1" />
             <span>
               <span class="block text-sm font-medium text-slate-800">再投入</span>
-              <span class="block text-xs text-slate-500 mt-0.5">配息後買回同一檔，適合長期總報酬回測；需配息資料後才會生效。</span>
+              <span class="block text-xs text-slate-500 mt-0.5">每次配息後以除息日收盤價買回同一檔，適合長期總報酬回測。</span>
             </span>
           </label>
         </div>
+        <p v-if="showResult && dividends.length" class="text-xs mt-2 text-green-600">
+          已載入 {{ dividends.length }} 筆配息記錄
+        </p>
+        <p v-else-if="showResult && dividendMode === 'reinvest'" class="text-xs mt-2 text-amber-500">
+          未找到配息資料，點上方「更新配息資料」從 Yahoo Finance 取得
+        </p>
       </section>
 
       <section class="bg-white border border-slate-200 rounded-xl p-5">
@@ -335,7 +418,7 @@ async function runBacktest() {
     <div v-if="showResult && result" class="bg-white border border-slate-200 rounded-xl overflow-hidden">
       <div class="px-5 py-4 border-b border-slate-100">
         <h3 class="text-sm font-semibold text-slate-800">回測明細</h3>
-        <p class="text-xs text-slate-400 mt-0.5">目前採買進持有模型，買在第一筆價格、賣在最後一筆價格。</p>
+        <p class="text-xs text-slate-400 mt-0.5">買進持有模型，買在第一筆價格、賣在最後一筆價格。</p>
       </div>
       <table class="w-full text-sm">
         <tbody class="divide-y divide-slate-50">
@@ -347,14 +430,39 @@ async function runBacktest() {
             <td class="px-5 py-3 text-slate-500">買進金額 + 手續費</td>
             <td class="px-5 py-3 text-right font-medium text-slate-800">{{ money(result.buyAmount) }} + {{ money(result.buyFee) }}</td>
           </tr>
+          <tr v-if="dividendMode === 'reinvest' && result.finalShares !== result.shares">
+            <td class="px-5 py-3 text-slate-500">持有股數（含配息再投入）</td>
+            <td class="px-5 py-3 text-right font-medium text-slate-800">{{ result.shares }} → {{ result.finalShares }} 股</td>
+          </tr>
           <tr>
             <td class="px-5 py-3 text-slate-500">賣出金額 - 手續費 - 交易稅</td>
             <td class="px-5 py-3 text-right font-medium text-slate-800">
               {{ money(result.sellAmount) }} - {{ money(result.sellFee) }} - {{ money(result.sellTax) }}
             </td>
           </tr>
+          <tr v-if="result.dividendEvents.length > 0">
+            <td class="px-5 py-3 text-slate-500">
+              {{ dividendMode === 'cash' ? '配息收入（現金）' : '配息再投入金額' }}
+            </td>
+            <td class="px-5 py-3 text-right font-medium text-green-600">
+              + {{ money(result.totalDividendCash) }}
+              <span class="text-xs text-slate-400 ml-1">（{{ result.dividendEvents.length }} 次）</span>
+            </td>
+          </tr>
         </tbody>
       </table>
+      <div v-if="result.dividendEvents.length > 0" class="px-5 py-3 border-t border-slate-100 bg-slate-50/60">
+        <p class="text-xs font-medium text-slate-500 mb-2">配息紀錄</p>
+        <div class="space-y-1">
+          <div v-for="ev in result.dividendEvents" :key="ev.ex_date" class="flex justify-between text-xs text-slate-500">
+            <span>{{ ev.ex_date }}</span>
+            <span class="text-green-600">
+              +{{ money(ev.amount) }}
+              <span v-if="ev.sharesAdded != null"> → 買入 {{ ev.sharesAdded }} 股</span>
+            </span>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>

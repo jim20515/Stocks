@@ -124,6 +124,44 @@ export default defineEventHandler(async (event) => {
   const body = await readBody(event)
 
   const code = String(body?.code ?? '').trim().toUpperCase()
+
+  // 自動追蹤此股票，順便查名稱（只在尚無名稱時才查）
+  const { data: existing } = await client
+    .from('user_stock_tracking')
+    .select('name')
+    .eq('user_id', userId)
+    .eq('stock_code', code)
+    .maybeSingle()
+
+  let stockName: string | null = existing?.name ?? null
+  if (!stockName) {
+    try {
+      const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Taipei' }).replace(/-/g, '')
+      const resp = await $fetch<any>(
+        `https://www.twse.com.tw/exchangeReport/STOCK_DAY?response=json&date=${today}&stockNo=${code}`,
+        { headers: { 'User-Agent': 'Mozilla/5.0' } },
+      )
+      // title 格式："112年01月 2330 台積電           各日成交資訊"
+      const match = resp?.title?.match(/\d+\s+(\S+)\s+(\S+)/)
+      if (match) stockName = match[2]
+    } catch {}
+
+    if (!stockName) {
+      try {
+        const list = await $fetch<{ Code: string; Name: string }[]>(
+          'https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL',
+        )
+        stockName = list.find(c => c.Code?.trim() === code)?.Name?.trim() ?? null
+      } catch {}
+    }
+  }
+
+  await client
+    .from('user_stock_tracking')
+    .upsert(
+      { user_id: userId, stock_code: code, name: stockName },
+      { onConflict: 'user_id,stock_code', ignoreDuplicates: false },
+    )
   const startDate = String(body?.startDate ?? '2004-01-01')
   const endDate = String(body?.endDate ?? new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Taipei' }))
   const maxMonths = Math.min(Math.max(Number(body?.maxMonths ?? 24), 1), 36)
