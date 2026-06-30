@@ -323,7 +323,8 @@ async function updateDividends() {
                     <span class="font-mono font-medium">{{ s.code }}</span>
                     <span v-if="s.name && s.name !== '—'" class="ml-2 text-slate-500">{{ s.name }}</span>
                   </span>
-                  <span class="text-xs text-slate-300 ml-2 shrink-0">{{ s.count?.toLocaleString() }}天</span>
+                  <span v-if="!s.count" class="text-xs text-orange-400 ml-2 shrink-0">無資料</span>
+                  <span v-else class="text-xs text-slate-300 ml-2 shrink-0">{{ s.count?.toLocaleString() }}天</span>
                 </button>
               </div>
             </div>
@@ -356,6 +357,11 @@ async function updateDividends() {
       <div v-if="code.trim().length >= 4 || firstDateHint" class="mt-2 text-xs leading-5 text-slate-400">
         <span v-if="code.trim().length >= 4">系統判斷：{{ inferredSecurityLabel }}，賣出交易稅率 {{ taxRate }}%</span>
         <span v-if="firstDateHint" class="block" :class="lookingUpFirstDate ? 'text-indigo-500' : firstDateHint.includes('已自動') ? 'text-green-600' : 'text-slate-400'">{{ firstDateHint }}</span>
+        <span v-if="allStocks.find((s: any) => s.code === code)?.count === 0" class="block mt-0.5 text-orange-500">
+          此股票尚無歷史數據，請先前往
+          <NuxtLink to="/backtest/history" class="underline text-indigo-500">更新歷史數據</NuxtLink>
+          頁面抓取後再回來。
+        </span>
       </div>
       <p v-if="updateAllProgress" class="text-xs text-indigo-500 mt-2">{{ updateAllProgress }}</p>
       <p v-if="progressText" class="text-xs text-indigo-500 mt-2">{{ progressText }}</p>

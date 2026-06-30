@@ -5,11 +5,14 @@ export default defineEventHandler(async (event) => {
   const id = Number(getRouterParam(event, 'id'))
   const { name } = await readBody(event)
 
-  if (!name?.trim()) throw createError({ statusCode: 400, message: '名稱不可空白' })
+  if (!Number.isInteger(id) || id <= 0) throw createError({ statusCode: 400, message: '無效的 ID' })
+  const accountName = String(name ?? '').trim()
+  if (!accountName) throw createError({ statusCode: 400, message: '名稱不可空白' })
+  if (accountName.length > 40) throw createError({ statusCode: 400, message: '帳戶名稱過長' })
 
   const { error } = await client
     .from('portfolio_accounts')
-    .update({ name: name.trim() })
+    .update({ name: accountName })
     .eq('id', id)
     .eq('user_id', userId)
 

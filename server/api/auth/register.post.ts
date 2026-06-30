@@ -3,13 +3,15 @@ import { createClient } from '@supabase/supabase-js'
 export default defineEventHandler(async (event) => {
   const { email, password } = await readBody(event)
   if (!email || !password) throw createError({ statusCode: 400, message: '請輸入 Email 和密碼' })
+  const normalizedEmail = String(email).trim().toLowerCase()
+  checkRateLimit(event, `register:${normalizedEmail}`, 3, 60 * 60 * 1000)
 
   const url = process.env.SUPABASE_URL ?? useRuntimeConfig().supabaseUrl as string
   const key = process.env.SUPABASE_KEY ?? useRuntimeConfig().supabaseKey as string
   const client = createClient(url, key)
 
-  const { data, error } = await client.auth.signUp({ email, password })
-  if (error) throw createError({ statusCode: 400, message: error.message })
+  const { data, error } = await client.auth.signUp({ email: normalizedEmail, password })
+  if (error) throw createError({ statusCode: 400, message: '註冊失敗，請確認資料後再試' })
   if (!data.session) throw createError({ statusCode: 400, message: '請至信箱確認帳號後再登入' })
 
   return {

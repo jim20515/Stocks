@@ -4,8 +4,8 @@ export default defineEventHandler(async (event) => {
   const client = useDb(token)
   const body = await readBody(event)
 
-  const code = String(body?.code ?? '').trim().toUpperCase()
-  if (!code) throw createError({ statusCode: 400, message: '請提供股票代號' })
+  const code = normalizeStockCode(body?.code)
+  checkRateLimit(event, `dividends-update:${code}`, 6, 60 * 1000)
 
   // Yahoo Finance: fetch full dividend history
   const period1 = Math.floor(Date.UTC(2000, 0, 1) / 1000)

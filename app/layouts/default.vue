@@ -69,6 +69,21 @@ function toDate(s: string, format?: string) {
 }
 
 async function parseRawRows(file: File): Promise<any[]> {
+  const fileName = file.name.toLowerCase()
+  if (fileName.endsWith('.xlsx')) {
+    const readXlsxFile = (await import('read-excel-file/browser')).default
+    const rows = await readXlsxFile(file)
+    const headers = (rows[0] ?? []).map(v => String(v ?? '').trim())
+    return rows.slice(1).map(values => {
+      const row: any = {}
+      values.forEach((value, index) => {
+        if (value instanceof Date) row[headers[index] ?? index] = value.toISOString().slice(0, 10)
+        else row[headers[index] ?? index] = value ?? ''
+      })
+      return row
+    }).filter(row => Object.values(row).some(v => String(v ?? '').trim() !== ''))
+  }
+
   const text = await file.text()
   const trimmed = text.trimStart()
   if (trimmed.startsWith('<')) {
@@ -104,14 +119,9 @@ async function parseRawRows(file: File): Promise<any[]> {
       headers.forEach((h, i) => { row[h] = cells[i] ?? '' })
       return row
     }).filter(r => Object.values(r).some(v => v !== ''))
-  } else {
-    // XLSX
-    const XLSX = await import('xlsx')
-    const buf = await file.arrayBuffer()
-    const wb = XLSX.read(buf, { type: 'array', cellDates: true })
-    const ws = wb.Sheets[wb.SheetNames[0]]
-    return XLSX.utils.sheet_to_json(ws, { defval: null })
   }
+
+  return []
 }
 
 async function parseWithAI(file: File) {

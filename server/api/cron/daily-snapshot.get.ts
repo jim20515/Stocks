@@ -4,7 +4,10 @@ export default defineEventHandler(async (event) => {
   // 驗證 Vercel Cron 呼叫（防止外部亂打）
   const authHeader = getHeader(event, 'authorization')
   const cronSecret = process.env.CRON_SECRET
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+  if (!cronSecret) {
+    throw createError({ statusCode: 500, message: 'CRON_SECRET not set' })
+  }
+  if (authHeader !== `Bearer ${cronSecret}`) {
     throw createError({ statusCode: 401, message: 'Unauthorized' })
   }
 
@@ -26,7 +29,8 @@ export default defineEventHandler(async (event) => {
 
   const uniqueUsers = [...new Set(users.map(u => u.user_id))]
   const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Taipei' })
-  const results = []
+  let processed = 0
+  let failed = 0
 
   for (const userId of uniqueUsers) {
     try {
@@ -104,11 +108,12 @@ export default defineEventHandler(async (event) => {
         daily_trade_amount: dailyTradeAmount,
       }, { onConflict: 'user_id,date' })
 
-      results.push({ userId, success: true })
+      processed++
     } catch (e: any) {
-      results.push({ userId, success: false, error: e.message })
+      console.error('[daily-snapshot] failed for user', userId, e?.message ?? e)
+      failed++
     }
   }
 
-  return { success: true, date: today, processed: results.length, results }
+  return { success: true, date: today, processed, failed }
 })

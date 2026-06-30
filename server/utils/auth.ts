@@ -2,8 +2,9 @@ import type { H3Event } from 'h3'
 import { jwtVerify, createRemoteJWKSet } from 'jose'
 
 const supabaseUrl = process.env.SUPABASE_URL!
+const normalizedSupabaseUrl = supabaseUrl.replace(/\/$/, '')
 // JWKS is cached in-memory by jose after first fetch
-const JWKS = createRemoteJWKSet(new URL(`${supabaseUrl}/auth/v1/.well-known/jwks.json`))
+const JWKS = createRemoteJWKSet(new URL(`${normalizedSupabaseUrl}/auth/v1/.well-known/jwks.json`))
 
 export function getBearerToken(event: H3Event): string | null {
   const auth = getHeader(event, 'authorization') ?? ''
@@ -16,9 +17,13 @@ export async function requireUser(event: H3Event): Promise<string> {
   if (!token) throw createError({ statusCode: 401, message: '未登入' })
 
   try {
-    const { payload } = await jwtVerify(token, JWKS)
+    const { payload } = await jwtVerify(token, JWKS, {
+      issuer: `${normalizedSupabaseUrl}/auth/v1`,
+      audience: 'authenticated',
+    })
     const userId = payload.sub
     if (!userId) throw new Error('no sub')
+    if (payload.role !== 'authenticated') throw new Error('invalid role')
     return userId
   } catch {
     throw createError({ statusCode: 401, message: '登入已過期，請重新登入' })

@@ -4,11 +4,12 @@ export default defineEventHandler(async (event) => {
   const client = useDb(token)
   const query = getQuery(event)
 
-  const code = String(query.code ?? '').trim().toUpperCase()
-  const startDate = String(query.startDate ?? '2004-01-01')
-  const endDate = String(query.endDate ?? new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Taipei' }))
-
-  if (!code) throw createError({ statusCode: 400, message: '請提供股票代號' })
+  const code = normalizeStockCode(query.code)
+  const startDate = normalizeDate(query.startDate ?? '2004-01-01', '開始日期')
+  const endDate = normalizeDate(query.endDate ?? new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Taipei' }), '結束日期')
+  if (new Date(startDate) > new Date(endDate)) {
+    throw createError({ statusCode: 400, message: '日期區間不正確' })
+  }
 
   // Supabase 專案 max-rows = 1000，分頁抓取全部資料
   const PAGE = 1000

@@ -64,8 +64,8 @@ async function fetchFirstTradingDateInMonth(code: string, year: number, month: n
 export default defineEventHandler(async (event) => {
   await requireUser(event)
 
-  const code = String(getQuery(event).code ?? '').trim().toUpperCase()
-  if (!code) throw createError({ statusCode: 400, message: '請提供股票代號' })
+  const code = normalizeStockCode(getQuery(event).code)
+  checkRateLimit(event, `first-date:${code}`, 20, 60 * 1000)
 
   // TWSE/TPEx 公開月資料以近代電子資料為主。若更早資料源補齊後，可調整此起點。
   const startIdx = monthIndex(2004, 1)

@@ -123,7 +123,8 @@ export default defineEventHandler(async (event) => {
   const client = useDb(token)
   const body = await readBody(event)
 
-  const code = String(body?.code ?? '').trim().toUpperCase()
+  const code = normalizeStockCode(body?.code)
+  checkRateLimit(event, `backtest-history:${userId}:${code}`, 12, 60 * 1000)
 
   // 自動追蹤此股票，順便查名稱（只在尚無名稱時才查）
   const { data: existing } = await client
@@ -162,12 +163,11 @@ export default defineEventHandler(async (event) => {
       { user_id: userId, stock_code: code, name: stockName },
       { onConflict: 'user_id,stock_code', ignoreDuplicates: false },
     )
-  const startDate = String(body?.startDate ?? '2004-01-01')
-  const endDate = String(body?.endDate ?? new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Taipei' }))
+  const startDate = normalizeDate(body?.startDate ?? '2004-01-01', '開始日期')
+  const endDate = normalizeDate(body?.endDate ?? new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Taipei' }), '結束日期')
   const maxMonths = Math.min(Math.max(Number(body?.maxMonths ?? 24), 1), 36)
 
   if (!userId) throw createError({ statusCode: 401, message: '未登入' })
-  if (!code) throw createError({ statusCode: 400, message: '請提供股票代號' })
 
   const start = new Date(startDate)
   const end = new Date(endDate)

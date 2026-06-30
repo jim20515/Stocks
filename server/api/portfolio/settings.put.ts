@@ -4,19 +4,20 @@ export default defineEventHandler(async (event) => {
   const token = getBearerToken(event)
   const client = useDb(token)
   const body = await readBody(event)
+  const year = new Date().getFullYear()
 
   const payload = {
     user_id:                userId,
-    cash_amount:            Number(body.cashAmount            ?? body.cash_amount            ?? 0),
-    target_beta:            Number(body.targetBeta            ?? body.target_beta            ?? 1.46),
-    start_invest_year:      Number(body.startInvestYear       ?? body.start_invest_year      ?? new Date().getFullYear()),
-    initial_age:            Number(body.initialAge            ?? body.initial_age            ?? 30),
-    initial_amount:         Number(body.initialAmount         ?? body.initial_amount         ?? 20000000),
-    annual_contribution:    Number(body.annualContribution    ?? body.annual_contribution    ?? 5000000),
-    stop_contribution_year: Number(body.stopContributionYear  ?? body.stop_contribution_year ?? 2030),
-    expected_annual_return: Number(body.expectedAnnualReturn  ?? body.expected_annual_return ?? 0.16),
-    target_alloc_1x:        Number(body.targetAlloc1x         ?? body.target_alloc_1x        ?? 70),
-    target_alloc_2x:        Number(body.targetAlloc2x         ?? body.target_alloc_2x        ?? 20),
+    cash_amount:            finiteNumber(body.cashAmount            ?? body.cash_amount            ?? 0,        '現金部位', 0, 1_000_000_000_000),
+    target_beta:            finiteNumber(body.targetBeta            ?? body.target_beta            ?? 1.46,     '目標 Beta', 0, 20),
+    start_invest_year:      finiteNumber(body.startInvestYear       ?? body.start_invest_year      ?? year,     '開始投資年份', 1900, 2200),
+    initial_age:            finiteNumber(body.initialAge            ?? body.initial_age            ?? 30,       '起始年齡', 0, 120),
+    initial_amount:         finiteNumber(body.initialAmount         ?? body.initial_amount         ?? 20000000, '開始資金', 0, 1_000_000_000_000),
+    annual_contribution:    finiteNumber(body.annualContribution    ?? body.annual_contribution    ?? 5000000,  '每年投入', 0, 1_000_000_000_000),
+    stop_contribution_year: finiteNumber(body.stopContributionYear  ?? body.stop_contribution_year ?? 2030,     '停止投入年份', 1900, 2200),
+    expected_annual_return: finiteNumber(body.expectedAnnualReturn  ?? body.expected_annual_return ?? 0.16,     '預期年化報酬', -1, 10),
+    target_alloc_1x:        finiteNumber(body.targetAlloc1x         ?? body.target_alloc_1x        ?? 70,       '一倍配置', 0, 100),
+    target_alloc_2x:        finiteNumber(body.targetAlloc2x         ?? body.target_alloc_2x        ?? 20,       '兩倍配置', 0, 100),
   }
 
   const { data, error } = await client

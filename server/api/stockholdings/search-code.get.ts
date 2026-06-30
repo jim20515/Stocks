@@ -1,6 +1,8 @@
 export default defineEventHandler(async (event) => {
   const name = String(getQuery(event).name ?? '').trim()
   if (!name) throw createError({ statusCode: 400, message: '請提供股票名稱' })
+  if (name.length > 40) throw createError({ statusCode: 400, message: '股票名稱過長' })
+  checkRateLimit(event, 'search-code', 30, 60 * 1000)
 
   function normalize(s: string) {
     return s.replace(/\s/g, '').toUpperCase()
