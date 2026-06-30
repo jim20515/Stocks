@@ -63,27 +63,43 @@ async function fetchTwseDayLatest(code: string): Promise<{ price: number | null;
 
 /** 查詢單一股票名稱與現價 */
 export async function lookupStock(code: string): Promise<{ name: string; price: number | null } | null> {
-  // 1. MIS 即時
+  let name: string | null = null
+  let price: number | null = null
+
+  // 1. MIS 即時（取名稱）
   for (const ex of ['tse', 'otc']) {
     try {
       const data = await $fetch<MisResp>(`${MIS_URL}${ex}_${code.toLowerCase()}.tw`)
       const item = data?.msgArray?.[0]
-      if (item?.n?.trim()) {
-        return { name: item.n.trim(), price: parseMisPrice(item) }
-      }
+      if (item?.n?.trim()) { name = item.n.trim(); break }
     } catch {}
   }
 
-  // 2. TWSE 個股月報表（同時取名稱與最新收盤）
-  const twse = await fetchTwseDayLatest(code)
-  if (twse.name) return { name: twse.name, price: twse.price }
+  // 2. Yahoo Finance 即時價格（主要來源，與列表一致）
+  try {
+    const data = await $fetch<any>(
+      `https://query2.finance.yahoo.com/v8/finance/chart/${code}.TW?interval=1m&range=1d`,
+      { headers: { 'User-Agent': 'Mozilla/5.0' } }
+    )
+    const p = data?.chart?.result?.[0]?.meta?.regularMarketPrice
+    if (p && p > 0) price = p
+  } catch {}
 
-  // 3. 公司代號列表（名稱 only）
+  // 3. 若名稱或價格缺，用 TWSE 月報補
+  if (!name || price === null) {
+    const twse = await fetchTwseDayLatest(code)
+    if (!name && twse.name) name = twse.name
+    if (price === null) price = twse.price
+  }
+
+  if (name) return { name, price }
+
+  // 4. 公司代號列表（名稱 only）
   for (const url of [LISTED_URL, OTC_URL]) {
     try {
       const list = await $fetch<CompanyInfo[]>(url)
       const item = list?.find(c => c.公司代號.trim().toUpperCase() === code.toUpperCase())
-      if (item) return { name: item.公司簡稱.trim(), price: twse.price }
+      if (item) return { name: item.公司簡稱.trim(), price }
     } catch {}
   }
 
