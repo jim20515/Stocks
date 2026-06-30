@@ -52,6 +52,7 @@ const navItems = [
     children: [
       { path: '/backtest/history', label: '更新歷史數據' },
       { path: '/backtest', label: '回測分析' },
+      { path: '/backtest/strategy', label: '策略回測' },
     ],
   },
   {

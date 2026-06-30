@@ -26,6 +26,47 @@ type DividendRow = {
 }
 
 const { updating: updatingAllLatest, progress: updateAllProgress } = useBacktestUpdate()
+
+// ── 股票搜尋下拉 ─────────────────────────────────────────────
+const { data: allCodesData } = await useFetch<any>('/api/backtest/all-codes', {
+  headers: authHeaders.value as HeadersInit,
+})
+const allStocks = computed(() => {
+  const raw = [...(allCodesData.value?.stocks ?? [])]
+  raw.sort((a: any, b: any) => {
+    const ap = pinnedCodes.value.includes(a.code) ? 0 : 1
+    const bp = pinnedCodes.value.includes(b.code) ? 0 : 1
+    if (ap !== bp) return ap - bp
+    return a.code.localeCompare(b.code)
+  })
+  return raw
+})
+const pinnedCodes = ref<string[]>(
+  JSON.parse(typeof localStorage !== 'undefined' ? (localStorage.getItem('pinned_stocks') ?? '[]') : '[]')
+)
+function togglePin(stockCode: string, e: Event) {
+  e.stopPropagation()
+  const idx = pinnedCodes.value.indexOf(stockCode)
+  if (idx >= 0) pinnedCodes.value.splice(idx, 1)
+  else pinnedCodes.value.push(stockCode)
+  localStorage.setItem('pinned_stocks', JSON.stringify(pinnedCodes.value))
+}
+const codeSearch = ref('')
+const showCodeDropdown = ref(false)
+const filteredStocks = computed(() => {
+  const q = codeSearch.value.trim().toUpperCase()
+  if (!q) return allStocks.value
+  return allStocks.value.filter((s: any) => s.code.includes(q) || s.name?.toUpperCase().includes(q))
+})
+function selectCode(c: string) {
+  code.value = c
+  const s = allStocks.value.find((s: any) => s.code === c)
+  codeSearch.value = s ? `${s.code}　${s.name}` : c
+  showCodeDropdown.value = false
+}
+function onCodeFocus() { codeSearch.value = ''; showCodeDropdown.value = true }
+function onCodeBlur() { setTimeout(() => { showCodeDropdown.value = false }, 150) }
+
 const loading = ref(false)
 const updatingDividends = ref(false)
 const lookingUpFirstDate = ref(false)
@@ -247,12 +288,45 @@ async function updateDividends() {
     <div class="bg-white border border-slate-200 rounded-xl p-5">
       <div class="space-y-3">
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[minmax(180px,250px)_minmax(180px,250px)_minmax(180px,250px)_minmax(180px,250px)_auto] gap-3 lg:items-end">
-          <div>
+          <div class="relative">
             <label class="block text-xs font-medium text-slate-600 mb-1.5">股票代號</label>
-            <input v-model="code" type="text" placeholder="例如 2330、0050、009816"
-              @blur="lookupFirstDate"
+            <input
+              v-model="codeSearch"
+              type="text" placeholder="搜尋代號或名稱…"
+              @focus="onCodeFocus"
+              @blur="onCodeBlur"
               @keyup.enter="lookupFirstDate"
-              class="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300 uppercase" />
+              class="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300"
+            />
+            <div v-if="showCodeDropdown"
+              class="absolute z-30 mt-1 w-full min-w-56 bg-white border border-slate-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
+              <div v-if="filteredStocks.length === 0" class="px-3 py-2 text-xs text-slate-400">無符合結果</div>
+              <div
+                v-for="s in filteredStocks" :key="s.code"
+                class="flex items-center group"
+                :class="s.code === code ? 'bg-indigo-50' : 'hover:bg-slate-50'"
+              >
+                <button type="button"
+                  class="pl-2.5 pr-1 py-2 shrink-0 transition"
+                  :class="pinnedCodes.includes(s.code) ? 'text-amber-400' : 'text-slate-200 group-hover:text-slate-300'"
+                  @mousedown.prevent="togglePin(s.code, $event)"
+                  title="釘選至最上方">
+                  <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                  </svg>
+                </button>
+                <button type="button"
+                  class="flex-1 flex items-center justify-between px-2 py-2 text-sm text-left"
+                  :class="s.code === code ? 'text-indigo-600' : 'text-slate-700'"
+                  @mousedown.prevent="selectCode(s.code); lookupFirstDate()">
+                  <span>
+                    <span class="font-mono font-medium">{{ s.code }}</span>
+                    <span v-if="s.name && s.name !== '—'" class="ml-2 text-slate-500">{{ s.name }}</span>
+                  </span>
+                  <span class="text-xs text-slate-300 ml-2 shrink-0">{{ s.count?.toLocaleString() }}天</span>
+                </button>
+              </div>
+            </div>
           </div>
           <div>
             <label class="block text-xs font-medium text-slate-600 mb-1.5">開始日期</label>

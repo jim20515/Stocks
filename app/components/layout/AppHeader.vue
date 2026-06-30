@@ -9,8 +9,9 @@ const titleMap: Record<string, string> = {
   '/stocks':     '持股管理',
   '/allocation': '資產配置',
   '/watermark':  '水位分析',
-  '/backtest':   '回測分析',
-  '/backtest/history': '更新歷史數據',
+  '/backtest':          '回測分析',
+  '/backtest/history':  '更新歷史數據',
+  '/backtest/strategy': '策略回測',
   '/lifegoal':   '人生目標',
   '/daily':      '每日漲幅',
   '/accounts':   '帳戶管理',
@@ -77,7 +78,7 @@ function hideTip() { tooltip.value = null }
             新增交易
           </button>
         </template>
-        <template v-if="route.path === '/backtest'">
+        <template v-if="route.path === '/backtest' || route.path === '/backtest/strategy'">
           <button @click="updateAllLatestPrices" :disabled="backtestUpdating"
             @mouseenter="showTip($event, '更新所有資料庫股票最新價格')"
             @mouseleave="hideTip"

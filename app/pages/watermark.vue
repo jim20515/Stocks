@@ -16,6 +16,50 @@ const selected = ref(holdings.value?.[0]?.stockCode ?? '')
 const result = ref<any>(null)
 const loading = ref(false)
 
+// ── 釘選 + 自訂下拉 ─────────────────────────────────────────
+const pinnedCodes = ref<string[]>(
+  JSON.parse(typeof localStorage !== 'undefined' ? (localStorage.getItem('pinned_stocks') ?? '[]') : '[]')
+)
+function togglePin(code: string, e: Event) {
+  e.stopPropagation()
+  const idx = pinnedCodes.value.indexOf(code)
+  if (idx >= 0) pinnedCodes.value.splice(idx, 1)
+  else pinnedCodes.value.push(code)
+  localStorage.setItem('pinned_stocks', JSON.stringify(pinnedCodes.value))
+}
+const sortedHoldings = computed(() => {
+  return [...holdings.value].sort((a: any, b: any) => {
+    const ap = pinnedCodes.value.includes(a.stockCode) ? 0 : 1
+    const bp = pinnedCodes.value.includes(b.stockCode) ? 0 : 1
+    if (ap !== bp) return ap - bp
+    return a.stockCode.localeCompare(b.stockCode)
+  })
+})
+const wmSearch = ref('')
+const showWmDropdown = ref(false)
+const filteredHoldings = computed(() => {
+  const q = wmSearch.value.trim().toUpperCase()
+  if (!q) return sortedHoldings.value
+  return sortedHoldings.value.filter((h: any) =>
+    h.stockCode.includes(q) || h.stockName?.toUpperCase().includes(q)
+  )
+})
+function selectHolding(code: string) {
+  selected.value = code
+  const h = holdings.value.find((h: any) => h.stockCode === code)
+  wmSearch.value = h ? `${h.stockCode}　${h.stockName}` : code
+  showWmDropdown.value = false
+  loadWatermark()
+}
+function onWmFocus() { wmSearch.value = ''; showWmDropdown.value = true }
+function onWmBlur() { setTimeout(() => { showWmDropdown.value = false }, 150) }
+
+// 初始顯示選中的名稱
+if (selected.value) {
+  const h = holdings.value.find((h: any) => h.stockCode === selected.value)
+  if (h) wmSearch.value = `${h.stockCode}　${h.stockName}`
+}
+
 async function loadWatermark() {
   if (!selected.value) return
   loading.value = true
@@ -41,12 +85,41 @@ if (selected.value) await loadWatermark()
       <div class="flex flex-wrap items-center gap-4">
         <div>
           <label class="block text-xs font-medium text-slate-600 mb-1.5">選擇持股</label>
-          <select v-model="selected" @change="loadWatermark"
-            class="px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white min-w-40">
-            <option v-for="h in holdings" :key="h.stockCode" :value="h.stockCode">
-              {{ h.stockCode }} {{ h.stockName }}
-            </option>
-          </select>
+          <div class="relative">
+            <input
+              v-model="wmSearch"
+              type="text" placeholder="搜尋代號或名稱…"
+              @focus="onWmFocus"
+              @blur="onWmBlur"
+              class="px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white min-w-52"
+            />
+            <div v-if="showWmDropdown"
+              class="absolute z-30 mt-1 w-full min-w-52 bg-white border border-slate-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
+              <div v-if="filteredHoldings.length === 0" class="px-3 py-2 text-xs text-slate-400">無符合結果</div>
+              <div
+                v-for="h in filteredHoldings" :key="h.stockCode"
+                class="flex items-center group"
+                :class="h.stockCode === selected ? 'bg-indigo-50' : 'hover:bg-slate-50'"
+              >
+                <button type="button"
+                  class="pl-2.5 pr-1 py-2 shrink-0 transition"
+                  :class="pinnedCodes.includes(h.stockCode) ? 'text-amber-400' : 'text-slate-200 group-hover:text-slate-300'"
+                  @mousedown.prevent="togglePin(h.stockCode, $event)"
+                  title="釘選至最上方">
+                  <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                  </svg>
+                </button>
+                <button type="button"
+                  class="flex-1 flex items-center px-2 py-2 text-sm text-left"
+                  :class="h.stockCode === selected ? 'text-indigo-600' : 'text-slate-700'"
+                  @mousedown.prevent="selectHolding(h.stockCode)">
+                  <span class="font-mono font-medium">{{ h.stockCode }}</span>
+                  <span v-if="h.stockName" class="ml-2 text-slate-500">{{ h.stockName }}</span>
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
         <p class="text-xs text-slate-400 mt-5">歷史最高水位（ATH）自動從 Yahoo Finance 抓取</p>
       </div>
