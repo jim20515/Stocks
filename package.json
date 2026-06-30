@@ -12,6 +12,7 @@
   "dependencies": {
     "@nuxtjs/supabase": "^2.0.9",
     "@nuxtjs/tailwindcss": "^6.14.0",
+    "docx": "^9.7.1",
     "jose": "^6.2.3",
     "nuxt": "^4.4.7",
     "v-calendar": "^3.1.2",
