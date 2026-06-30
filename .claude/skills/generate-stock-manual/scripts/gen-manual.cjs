@@ -2,7 +2,7 @@ const {
   Document, Packer, Paragraph, TextRun, ImageRun, Table, TableRow, TableCell,
   HeadingLevel, AlignmentType, BorderStyle, WidthType, ShadingType,
   PageNumber, Header, Footer, ExternalHyperlink, PageBreak,
-  LevelFormat, TableOfContents
+  LevelFormat, TabStopType, TabStopPosition
 } = require('docx')
 const fs = require('fs')
 const path = require('path')
@@ -191,9 +191,30 @@ const doc = new Document({
 
       pageBreak(),
 
-      // ── 目錄 ──
+      // ── 目錄（靜態，不使用動態欄位避免 Word 跳出更新提示）──
       new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun({ text: '目錄', bold: true, size: 36, font: 'Arial' })] }),
-      new TableOfContents('目錄', { hyperlink: true, headingStyleRange: '1-2' }),
+      ...[
+        ['1.', '系統簡介', '3'],
+        ['2.', '快速開始', '4'],
+        ['3.', '總覽儀表板', '5'],
+        ['4.', '持股管理', '6'],
+        ['5.', '每日漲幅', '8'],
+        ['6.', '資產配置', '9'],
+        ['7.', '水位分析', '10'],
+        ['8.', '回測分析', '11'],
+        ['9.', '策略回測', '13'],
+        ['10.', '更新歷史數據', '14'],
+        ['11.', '人生目標', '15'],
+        ['12.', '帳戶管理', '16'],
+        ['13.', '常見問題', '17'],
+      ].map(([num, title, page]) => new Paragraph({
+        spacing: { before: 60, after: 60 },
+        tabStops: [{ type: TabStopType.RIGHT, position: 9026, leader: 2 }],
+        children: [
+          new TextRun({ text: `${num}　${title}`, size: 22, font: 'Arial' }),
+          new TextRun({ text: `\t${page}`, size: 22, font: 'Arial' }),
+        ]
+      })),
 
       pageBreak(),
 
