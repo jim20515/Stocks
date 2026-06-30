@@ -62,8 +62,6 @@ const pagedStocks = computed(() => {
   const start = (currentPage.value - 1) * PAGE_SIZE
   return sortedStocks.value.slice(start, start + PAGE_SIZE)
 })
-let lookupTimer: ReturnType<typeof setTimeout> | null = null
-
 const inferredSecurityType = computed<'stock' | 'etf'>(() => {
   const normalizedCode = code.value.trim().toUpperCase()
   if (/^0\d{4,5}[A-Z]?$/.test(normalizedCode)) return 'etf'
@@ -107,12 +105,9 @@ async function lookupFirstDate() {
   }
 }
 
-watch(code, (value) => {
+watch(code, () => {
   firstDateHint.value = ''
-  if (lookupTimer) clearTimeout(lookupTimer)
-  const normalizedCode = value.trim().toUpperCase()
-  if (normalizedCode.length < 4) return
-  lookupTimer = setTimeout(() => lookupFirstDate(), 600)
+  error.value = ''
 })
 
 async function loadCurrentRangePrices() {
@@ -163,7 +158,6 @@ async function updatePriceData() {
         headers: authHeaders.value as HeadersInit,
         body: { code: normalizedCode, startDate: today, endDate: today, maxMonths: 1 },
       })
-      await loadCurrentRangePrices()
       await loadStocks()
       return
     } else if (latest.latestDate) {
@@ -204,9 +198,7 @@ async function updatePriceData() {
       guard++
     }
 
-    if (!prices.value.length) {
-      error.value = '查無歷史價格，請確認股票代號'
-    } else if (cursor) {
+    if (cursor) {
       logs.value.push('資料區間較長，已先載入部分月份；可再次執行補齊後續資料')
     }
 
@@ -223,8 +215,13 @@ async function updatePriceData() {
       logs.value.push('配息資料更新失敗（不影響價格資料）')
     }
 
-    await loadCurrentRangePrices()
     await loadStocks()
+
+    // 更新後確認資料是否存在（今天可能尚無收盤價，但歷史資料仍有效）
+    const stat = stocks.value.find(s => s.code === normalizedCode)
+    if (!stat || stat.count === 0) {
+      error.value = '查無歷史價格，請確認股票代號'
+    }
   } catch (e: any) {
     error.value = e?.data?.message ?? '價格資料更新失敗'
   } finally {
@@ -264,17 +261,10 @@ onMounted(() => loadStocks())
         <div class="relative">
           <label class="block text-xs font-medium text-slate-600 mb-1.5">股票代號</label>
           <input v-model="code" type="text" placeholder="例如 2330、0050、009816"
-            @blur="lookupFirstDate"
-            @keyup.enter="lookupFirstDate"
             class="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300 uppercase" />
-          <p v-if="code.trim().length >= 4 || firstDateHint"
+          <p v-if="code.trim().length >= 4"
             class="absolute left-0 top-full z-10 mt-1 w-full text-xs text-slate-400 leading-4">
-            <span v-if="code.trim().length >= 4">
-              系統判斷：{{ inferredSecurityLabel }}
-            </span>
-            <span v-if="firstDateHint" class="block" :class="lookingUpFirstDate ? 'text-indigo-500' : firstDateHint.includes('已自動') ? 'text-green-600' : 'text-slate-400'">
-              {{ firstDateHint }}
-            </span>
+            系統判斷：{{ inferredSecurityLabel }}
           </p>
         </div>
         <button @click="updatePriceData" :disabled="updatingPrices"
