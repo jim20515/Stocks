@@ -87,7 +87,7 @@ const navItems = [
 
     <nav class="flex-1 px-3 py-4 overflow-y-auto">
       <p class="px-3 mb-2 text-xs font-medium text-slate-400 uppercase tracking-wider">主選單</p>
-      <ul class="space-y-0.5">
+      <ul class="space-y-0.5 leading-normal">
         <li v-for="item in navItems" :key="item.path ?? item.key">
           <template v-if="'children' in item">
             <button

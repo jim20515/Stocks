@@ -47,7 +47,7 @@ async function deleteAccount(id: number) {
         v-model="newName"
         @keyup.enter="(e) => !e.isComposing && addAccount()"
         type="text"
-        placeholder="輸入帳戶別名，例如：穆穆、雙雙"
+        placeholder="輸入帳戶別名，例如：老婆、小孩"
         class="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300"
       />
       <button
