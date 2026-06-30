@@ -6,6 +6,8 @@ const { data: accounts, refresh } = await useAuthFetch<{ id: number; name: strin
 const newName = ref('')
 const adding = ref(false)
 const error = ref('')
+const editingId = ref<number | null>(null)
+const editingName = ref('')
 
 async function addAccount() {
   if (!newName.value.trim()) return
@@ -32,6 +34,27 @@ async function deleteAccount(id: number) {
     method: 'DELETE',
     headers: authHeaders.value as HeadersInit,
   })
+  await refresh()
+}
+
+function startEdit(acc: { id: number; name: string }) {
+  editingId.value = acc.id
+  editingName.value = acc.name
+}
+
+function cancelEdit() {
+  editingId.value = null
+  editingName.value = ''
+}
+
+async function saveEdit(id: number) {
+  if (!editingName.value.trim()) return
+  await $fetch(`/api/accounts/${id}`, {
+    method: 'PATCH',
+    headers: authHeaders.value as HeadersInit,
+    body: { name: editingName.value.trim() },
+  })
+  editingId.value = null
   await refresh()
 }
 </script>
@@ -65,17 +88,34 @@ async function deleteAccount(id: number) {
       <div
         v-for="acc in accounts"
         :key="acc.id"
-        class="flex items-center justify-between px-4 py-3 bg-white border border-slate-200 rounded-lg"
+        class="flex items-center gap-2 px-4 py-3 bg-white border border-slate-200 rounded-lg"
       >
-        <span class="text-sm text-slate-700">{{ acc.name }}</span>
-        <button
-          @click="deleteAccount(acc.id)"
-          class="text-slate-300 hover:text-red-400 transition"
-        >
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
+        <!-- 編輯中 -->
+        <template v-if="editingId === acc.id">
+          <input
+            v-model="editingName"
+            @keyup.enter="(e) => !e.isComposing && saveEdit(acc.id)"
+            @keyup.escape="cancelEdit"
+            autofocus
+            class="flex-1 px-2 py-1 text-sm border border-indigo-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300"
+          />
+          <button @click="saveEdit(acc.id)" class="text-xs text-indigo-600 hover:text-indigo-700 font-medium transition">儲存</button>
+          <button @click="cancelEdit" class="text-xs text-slate-400 hover:text-slate-600 transition">取消</button>
+        </template>
+        <!-- 一般狀態 -->
+        <template v-else>
+          <span class="flex-1 text-sm text-slate-700">{{ acc.name }}</span>
+          <button @click="startEdit(acc)" class="text-slate-300 hover:text-indigo-400 transition" title="編輯">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+            </svg>
+          </button>
+          <button @click="deleteAccount(acc.id)" class="text-slate-300 hover:text-red-400 transition" title="刪除">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </template>
       </div>
     </div>
     <p v-else class="text-sm text-slate-400 text-center py-8">尚無帳戶別名</p>
