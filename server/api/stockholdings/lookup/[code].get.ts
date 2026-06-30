@@ -1,5 +1,6 @@
 
 export default defineEventHandler(async (event) => {
+  await requireUser(event)
   const code = normalizeStockCode(getRouterParam(event, 'code'))
   checkRateLimit(event, `lookup:${code}`, 60, 60 * 1000)
 

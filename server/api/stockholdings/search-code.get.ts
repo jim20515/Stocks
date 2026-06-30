@@ -1,4 +1,5 @@
 export default defineEventHandler(async (event) => {
+  await requireUser(event)
   const name = String(getQuery(event).name ?? '').trim()
   if (!name) throw createError({ statusCode: 400, message: '請提供股票名稱' })
   if (name.length > 40) throw createError({ statusCode: 400, message: '股票名稱過長' })
