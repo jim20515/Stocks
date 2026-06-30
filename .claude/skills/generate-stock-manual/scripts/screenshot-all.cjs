@@ -2,7 +2,7 @@ const { chromium } = require('playwright')
 const path = require('path')
 
 const BASE = 'http://localhost:3000'
-const OUT = '/Users/jim/AI系統/Stocks/screenshots'
+const OUT = '/Users/jim/AI系統/Stocks/.claude/screenshots'
 const EMAIL = 'jim@sixdots.com.tw'
 const PASS = 'Jim2017060!'
 

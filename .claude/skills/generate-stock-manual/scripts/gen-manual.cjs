@@ -7,8 +7,8 @@ const {
 const fs = require('fs')
 const path = require('path')
 
-const SCREENSHOTS = '/Users/jim/AI系統/Stocks/screenshots'
-const OUT = '/Users/jim/AI系統/Stocks/股票看板_操作手冊.docx'
+const SCREENSHOTS = '/Users/jim/AI系統/Stocks/.claude/screenshots'
+const OUT = '/Users/jim/AI系統/Stocks/docs/股票看板_操作手冊.docx'
 
 // A4: 11906 x 16838 DXA, 1" margins = 9026 content width
 const CONTENT_W = 9026
