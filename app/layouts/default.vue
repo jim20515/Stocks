@@ -46,9 +46,17 @@ async function onXlsSelected(e: Event) {
   detecting.value = true
   try {
     await parseWithAI(file)
+  } catch (error: any) {
+    detectError.value = `無法匯入「${file.name}」：${getImportErrorMessage(error)}`
   } finally {
     detecting.value = false
   }
+}
+
+function getImportErrorMessage(error: any) {
+  const message = error?.data?.message ?? error?.message ?? String(error ?? '')
+  if (!message || message === '[object Object]') return '檔案格式不支援或內容無法解析'
+  return message
 }
 
 function extractCode(name: string) {
@@ -68,20 +76,40 @@ function toDate(s: string, format?: string) {
   return s.replace(/\//g, '-').slice(0, 10)
 }
 
+function rowsFromMatrix(matrix: any[][], headerIndex = 0) {
+  const headers = (matrix[headerIndex] ?? []).map(v => String(v ?? '').trim())
+  return matrix.slice(headerIndex + 1).map(values => {
+    const row: any = {}
+    values.forEach((value, index) => {
+      if (value instanceof Date) row[headers[index] ?? index] = value.toISOString().slice(0, 10)
+      else row[headers[index] ?? index] = value ?? ''
+    })
+    return row
+  }).filter(row => Object.values(row).some(v => String(v ?? '').trim() !== ''))
+}
+
+function findImportHeaderIndex(matrix: any[][]) {
+  return matrix.findIndex(row => {
+    const headers = row.map(v => String(v ?? '').trim())
+    const mapping = detectMapping(headers)
+    return Boolean(mapping.dateKey && mapping.nameKey && mapping.sharesKey && mapping.priceKey)
+  })
+}
+
 async function parseRawRows(file: File): Promise<any[]> {
   const fileName = file.name.toLowerCase()
   if (fileName.endsWith('.xlsx')) {
     const readXlsxFile = (await import('read-excel-file/browser')).default
-    const rows = await readXlsxFile(file)
-    const headers = (rows[0] ?? []).map(v => String(v ?? '').trim())
-    return rows.slice(1).map(values => {
-      const row: any = {}
-      values.forEach((value, index) => {
-        if (value instanceof Date) row[headers[index] ?? index] = value.toISOString().slice(0, 10)
-        else row[headers[index] ?? index] = value ?? ''
-      })
-      return row
-    }).filter(row => Object.values(row).some(v => String(v ?? '').trim() !== ''))
+    const workbook = await readXlsxFile(file) as any[]
+    const sheets = workbook[0]?.data
+      ? workbook as { sheet: string; data: any[][] }[]
+      : [{ sheet: '', data: workbook as any[][] }]
+
+    for (const sheet of sheets) {
+      const headerIndex = findImportHeaderIndex(sheet.data)
+      if (headerIndex >= 0) return rowsFromMatrix(sheet.data, headerIndex)
+    }
+    return []
   }
 
   const text = await file.text()
@@ -211,6 +239,8 @@ async function confirmImport() {
     })
     refreshKey.value++
     showImportModal.value = false
+  } catch (error: any) {
+    detectError.value = `匯入失敗：${getImportErrorMessage(error)}`
   } finally {
     importing.value = false
   }
@@ -359,7 +389,7 @@ async function submitForm() {
     <!-- AI 偵測中 / 錯誤提示 -->
     <Teleport to="body">
       <div v-if="detecting || detectError"
-        class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+        class="fixed inset-0 bg-black/40 z-[70] flex items-center justify-center p-4"
         @click.self="detectError = ''">
         <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 text-center">
           <template v-if="detecting">
@@ -371,8 +401,14 @@ async function submitForm() {
             <p class="text-xs text-slate-400 mt-1">通常不到 5 秒</p>
           </template>
           <template v-else-if="detectError">
-            <p class="text-sm font-medium text-red-600 mb-2">{{ detectError }}</p>
-            <button @click="detectError = ''" class="text-xs text-slate-400 hover:text-slate-600 transition">關閉</button>
+            <div class="w-10 h-10 mx-auto mb-3 rounded-full bg-red-50 text-red-500 flex items-center justify-center">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v4m0 4h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+              </svg>
+            </div>
+            <h2 class="text-base font-semibold text-slate-800 mb-1">匯入失敗</h2>
+            <p class="text-sm text-slate-500 mb-4 leading-6">{{ detectError }}</p>
+            <button @click="detectError = ''" class="px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-700 transition">我知道了</button>
           </template>
         </div>
       </div>
