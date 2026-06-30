@@ -367,7 +367,10 @@ async function submitForm() {
           <div class="flex items-center justify-between p-6 border-b border-slate-100 shrink-0">
             <div>
               <h2 class="text-base font-semibold text-slate-800">匯入 XLS 預覽</h2>
-              <p class="text-xs text-slate-400 mt-0.5">已從交易記錄計算出以下持股，確認後將新增到你的帳戶</p>
+              <p class="text-xs text-slate-400 mt-0.5">
+                已從交易記錄計算出以下持股，確認後將新增到你的帳戶．
+                <a href="/股票交易匯入範本.xlsx" download class="text-indigo-500 hover:text-indigo-700 underline">下載範本</a>
+              </p>
             </div>
             <button @click="showImportModal = false" class="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 transition">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -146,6 +146,38 @@ async function runHistoryImport() {
 async function refreshWithSnapshot() {
   refreshing.value = true
   try {
+    // 找最後一筆記錄日期，從隔月開始補齊到今天
+    const existingRows = (snapshots.value ?? []) as any[]
+    const lastDate = existingRows.length
+      ? existingRows.reduce((a: string, b: any) => (b.date > a ? b.date : a), existingRows[0].date)
+      : null
+
+    const today = new Date()
+    const startFrom = lastDate
+      ? new Date(lastDate)
+      : (() => {
+          const items = (holdings.value as any)?.items ?? []
+          const dates = items.map((h: any) => h.buyDate).filter(Boolean).sort()
+          return dates.length ? new Date(dates[0]) : today
+        })()
+
+    // 從 lastDate 當月開始（包含最後記錄那個月，讓它補齊當月剩餘天數）
+    const cur = new Date(startFrom.getFullYear(), startFrom.getMonth(), 1)
+    const monthsToFill: { year: number; month: number }[] = []
+    while (cur <= today) {
+      monthsToFill.push({ year: cur.getFullYear(), month: cur.getMonth() + 1 })
+      cur.setMonth(cur.getMonth() + 1)
+    }
+
+    for (const { year, month } of monthsToFill) {
+      await $fetch('/api/portfolio/history-import', {
+        method: 'POST',
+        headers: authHeaders.value as HeadersInit,
+        body: { year, month },
+      })
+    }
+
+    // 最後補一次今天即時價格
     await $fetch('/api/portfolio/snapshot', { method: 'POST', headers: authHeaders.value as HeadersInit })
   } catch {}
   await refresh()
@@ -169,10 +201,10 @@ async function refreshWithSnapshot() {
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                 d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0" />
             </svg>
-            {{ refreshing ? '抓取中…' : '抓取當天數值' }}
+            {{ refreshing ? '補齊中…' : '補齊至今日' }}
           </button>
-          <div class="absolute left-0 top-full mt-1.5 z-50 hidden group-hover:block bg-slate-800 text-slate-100 text-xs rounded-lg px-2.5 py-1.5 whitespace-nowrap shadow-lg pointer-events-none">
-            計算當天的每日漲幅
+          <div class="absolute left-0 top-full mt-1.5 z-50 hidden group-hover:block bg-slate-800 text-slate-100 text-xs rounded-lg px-2.5 py-1.5 shadow-lg pointer-events-none max-w-xs leading-5">
+            從最後一筆快照記錄的日期開始，補齊中間每個交易日的市值與漲跌，最後抓取今日即時價格。平時只需要按這個就好。
           </div>
         </div>
         <!-- 歷史匯入按鈕 -->
@@ -183,10 +215,10 @@ async function refreshWithSnapshot() {
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                 d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
             </svg>
-            {{ importing ? '匯入中…' : '重新計算歷史資料' }}
+            {{ importing ? '計算中…' : '重算所有歷史' }}
           </button>
-          <div class="absolute left-0 top-full mt-1.5 z-50 hidden group-hover:block bg-slate-800 text-slate-100 text-xs rounded-lg px-2.5 py-1.5 whitespace-nowrap shadow-lg pointer-events-none">
-            當有更動交易記錄時，可重新計算歷史資料
+          <div class="absolute right-0 top-full mt-1.5 z-50 hidden group-hover:block bg-slate-800 text-slate-100 text-xs rounded-lg px-2.5 py-1.5 shadow-lg pointer-events-none max-w-xs leading-5">
+            從第一筆交易日起，重新計算所有歷史每日市值與漲跌。當你新增、修改或刪除過去的交易記錄時使用，時間較長請耐心等待。
           </div>
         </div>
         <!-- 重新整理 -->

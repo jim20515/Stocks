@@ -61,6 +61,13 @@ function hideTip() { tooltip.value = null }
             </svg>
           </button>
           <!-- 桌面版：顯示文字 -->
+          <a href="/股票交易匯入範本.xlsx" download
+            class="hidden sm:flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 text-slate-500 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors">
+            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            範本
+          </a>
           <button @click="emit('import')"
             @mouseenter="showTip($event, '目前支援富邦、國泰對帳單')"
             @mouseleave="hideTip"
