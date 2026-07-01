@@ -21,8 +21,11 @@ watch(settings, (s) => {
   }
 }, { immediate: true })
 
+const errorMsg = ref('')
+
 async function save() {
   saving.value = true
+  errorMsg.value = ''
   try {
     await $fetch('/api/portfolio/settings', {
       method: 'PUT',
@@ -41,6 +44,9 @@ async function save() {
     await refreshProjection()
     msg.value = '設定已儲存'
     setTimeout(() => msg.value = '', 2000)
+  } catch (e: any) {
+    console.error('[lifegoal save] failed:', e)
+    errorMsg.value = e?.data?.message || e?.message || '儲存失敗，請稍後再試'
   } finally {
     saving.value = false
   }
@@ -119,6 +125,7 @@ const milestones = computed(() => {
           {{ saving ? '儲存中…' : '套用設定' }}
         </button>
         <span v-if="msg" class="text-sm text-green-600 font-medium">✓ {{ msg }}</span>
+        <span v-if="errorMsg" class="text-sm text-red-500 font-medium">✕ {{ errorMsg }}</span>
       </div>
     </div>
 

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 const route = useRoute()
 const { user, clearSession, authHeaders } = useAuth()
+const supabase = useSupabaseClient()
 const { $authFetch } = useNuxtApp()
 const sidebarOpen = ref(false)
 watch(route, () => { sidebarOpen.value = false })
@@ -296,8 +297,10 @@ function closeModal() {
 }
 
 async function logout() {
+  // 一併清掉 Supabase 的 OAuth session，否則回登入頁會用舊 session 自動登回同一帳號
+  try { await supabase.auth.signOut() } catch {}
   clearSession()
-  await navigateTo('/login')
+  window.location.replace('/login')
 }
 
 function inferLeverage(code: string): number {

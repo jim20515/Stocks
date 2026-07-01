@@ -15,7 +15,11 @@ const error = ref('')
 async function loginWithGoogle() {
   await supabase.auth.signInWithOAuth({
     provider: 'google',
-    options: { redirectTo: `${window.location.origin}/auth/callback` },
+    options: {
+      redirectTo: `${window.location.origin}/auth/callback`,
+      // 強制每次都顯示 Google 帳號選擇畫面，才能切換帳號
+      queryParams: { prompt: 'select_account' },
+    },
   })
 }
 
