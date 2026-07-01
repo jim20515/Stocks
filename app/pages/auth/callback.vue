@@ -1,42 +1,26 @@
 <script setup lang="ts">
 definePageMeta({ layout: false })
 
-const supabase = useSupabaseClient()
 const { setSession } = useAuth()
 const errorMessage = ref('')
 const loading = ref(true)
 
 onMounted(async () => {
-  function handleSession(session: any) {
-    setSession(session.access_token, {
-      id: session.user.id,
-      email: session.user.email ?? '',
-    })
-    window.location.replace('/')
-  }
-
   const url = new URL(window.location.href)
   const code = url.searchParams.get('code')
 
-  if (code) {
-    const { data, error } = await supabase.auth.exchangeCodeForSession(code)
-    if (data?.session) {
-      handleSession(data.session)
-      return
-    }
-    if (error) {
-      errorMessage.value = error.message
-      loading.value = false
-      return
-    }
+  if (!code) {
+    errorMessage.value = '缺少授權碼，請重新登入'
+    loading.value = false
+    return
   }
 
-  // implicit flow fallback：從現有 session 取得
-  const { data } = await supabase.auth.getSession()
-  if (data.session) {
-    handleSession(data.session)
-  } else {
-    errorMessage.value = '沒有取得登入 session，請回登入頁重試'
+  try {
+    const data = await $fetch<any>(`/api/auth/google-callback?code=${code}`)
+    setSession(data.accessToken, data.user)
+    window.location.replace('/')
+  } catch (e: any) {
+    errorMessage.value = e?.data?.message ?? '登入失敗，請重試'
     loading.value = false
   }
 })
