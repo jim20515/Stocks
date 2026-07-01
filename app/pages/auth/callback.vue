@@ -7,19 +7,19 @@ const errorMessage = ref('')
 const loading = ref(true)
 
 onMounted(async () => {
-  async function handleSession(session: any) {
+  function handleSession(session: any) {
     setSession(session.access_token, {
       id: session.user.id,
       email: session.user.email ?? '',
     })
-    await navigateTo('/')
+    window.location.replace('/')
   }
 
   // 先監聽，避免漏掉事件
   const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
     if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session) {
       subscription.unsubscribe()
-      await handleSession(session)
+      handleSession(session)
     }
   })
 
@@ -27,7 +27,7 @@ onMounted(async () => {
   const { data } = await supabase.auth.getSession()
   if (data.session) {
     subscription.unsubscribe()
-    await handleSession(data.session)
+    handleSession(data.session)
     return
   }
 
