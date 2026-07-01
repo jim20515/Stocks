@@ -33,7 +33,8 @@ async function submit() {
     startBar()
     await navigateTo('/')
   } catch (e: any) {
-    error.value = e?.data?.message ?? (tab.value === 'login' ? '登入失敗，請再試一次' : '註冊失敗，請確認資料後再試')
+    const msg = e?.data?.message
+    error.value = (typeof msg === 'string' && msg) ? msg : (tab.value === 'login' ? '登入失敗，請再試一次' : '註冊失敗，請確認資料後再試')
   } finally {
     loading.value = false
   }
