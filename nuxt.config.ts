@@ -11,11 +11,7 @@ export default defineNuxtConfig({
   ],
   supabase: {
     redirect: false,
-    clientOptions: {
-      auth: {
-        flowType: 'implicit',
-      },
-    },
+    useSsrCookies: true,
   },
   runtimeConfig: {
     supabaseUrl: '',
