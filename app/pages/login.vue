@@ -15,7 +15,7 @@ const error = ref('')
 async function loginWithGoogle() {
   await supabase.auth.signInWithOAuth({
     provider: 'google',
-    options: { redirectTo: 'https://stocks-six-eta.vercel.app/auth/callback' },
+    options: { redirectTo: `${window.location.origin}/auth/callback` },
   })
 }
 

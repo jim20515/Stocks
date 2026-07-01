@@ -3,10 +3,19 @@ definePageMeta({ layout: false })
 
 const supabase = useSupabaseClient()
 const { setSession } = useAuth()
+const errorMessage = ref('')
+const loading = ref(true)
 
 onMounted(async () => {
   const url = new URL(window.location.href)
   const code = url.searchParams.get('code')
+  const oauthError = url.searchParams.get('error_description') || url.searchParams.get('error')
+
+  if (oauthError) {
+    errorMessage.value = decodeURIComponent(oauthError)
+    loading.value = false
+    return
+  }
 
   if (code) {
     const { data, error } = await supabase.auth.exchangeCodeForSession(code)
@@ -16,6 +25,11 @@ onMounted(async () => {
         email: data.session.user.email ?? '',
       })
       await navigateTo('/')
+      return
+    }
+    if (error) {
+      errorMessage.value = error.message
+      loading.value = false
       return
     }
   }
@@ -29,13 +43,24 @@ onMounted(async () => {
     })
     await navigateTo('/')
   } else {
-    await navigateTo('/login')
+    errorMessage.value = '沒有取得登入 session，請回登入頁重試'
+    loading.value = false
   }
 })
 </script>
 
 <template>
   <div class="min-h-screen flex items-center justify-center bg-slate-50">
-    <p class="text-slate-400 text-sm">登入中…</p>
+    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm w-full max-w-sm p-6 text-center">
+      <p v-if="loading" class="text-slate-400 text-sm">登入中…</p>
+      <template v-else>
+        <p class="text-sm font-semibold text-slate-800">第三方登入失敗</p>
+        <p class="mt-2 text-xs text-red-500 break-words">{{ errorMessage }}</p>
+        <NuxtLink to="/login"
+          class="mt-5 inline-flex items-center justify-center px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition">
+          回登入頁
+        </NuxtLink>
+      </template>
+    </div>
   </div>
 </template>
