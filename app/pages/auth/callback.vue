@@ -4,35 +4,33 @@ definePageMeta({ layout: false })
 const supabase = useSupabaseClient()
 const { setSession } = useAuth()
 
-onMounted(() => {
-  const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-    if (session) {
-      subscription.unsubscribe()
-      setSession(session.access_token, {
-        id: session.user.id,
-        email: session.user.email ?? '',
-      })
-      await navigateTo('/')
-    } else if (event === 'SIGNED_OUT') {
-      subscription.unsubscribe()
-      await navigateTo('/login')
-    }
-  })
+onMounted(async () => {
+  const url = new URL(window.location.href)
+  const code = url.searchParams.get('code')
 
-  // 若 3 秒內沒有 session 則導回登入頁
-  setTimeout(async () => {
-    subscription.unsubscribe()
-    const { data } = await supabase.auth.getSession()
+  if (code) {
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code)
     if (data.session) {
       setSession(data.session.access_token, {
         id: data.session.user.id,
         email: data.session.user.email ?? '',
       })
       await navigateTo('/')
-    } else {
-      await navigateTo('/login')
+      return
     }
-  }, 3000)
+  }
+
+  // fallback：嘗試從現有 session 取得
+  const { data } = await supabase.auth.getSession()
+  if (data.session) {
+    setSession(data.session.access_token, {
+      id: data.session.user.id,
+      email: data.session.user.email ?? '',
+    })
+    await navigateTo('/')
+  } else {
+    await navigateTo('/login')
+  }
 })
 </script>
 
