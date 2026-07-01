@@ -6,26 +6,26 @@ const { setSession } = useAuth()
 const errorMessage = ref('')
 const loading = ref(true)
 
-onMounted(async () => {
-  // implicit flow：Supabase 會自動從 URL hash 解析 session
-  const { data, error } = await supabase.auth.getSession()
+onMounted(() => {
+  const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+    if (event === 'SIGNED_IN' && session) {
+      subscription.unsubscribe()
+      setSession(session.access_token, {
+        id: session.user.id,
+        email: session.user.email ?? '',
+      })
+      await navigateTo('/')
+    }
+  })
 
-  if (error) {
-    errorMessage.value = error.message
-    loading.value = false
-    return
-  }
-
-  if (data.session) {
-    setSession(data.session.access_token, {
-      id: data.session.user.id,
-      email: data.session.user.email ?? '',
-    })
-    await navigateTo('/')
-  } else {
-    errorMessage.value = '沒有取得登入 session，請回登入頁重試'
-    loading.value = false
-  }
+  // 5 秒後若還沒登入則顯示錯誤
+  setTimeout(() => {
+    subscription.unsubscribe()
+    if (loading.value) {
+      errorMessage.value = '登入逾時，請回登入頁重試'
+      loading.value = false
+    }
+  }, 5000)
 })
 </script>
 
