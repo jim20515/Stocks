@@ -7,35 +7,15 @@ const errorMessage = ref('')
 const loading = ref(true)
 
 onMounted(async () => {
-  const url = new URL(window.location.href)
-  const code = url.searchParams.get('code')
-  const oauthError = url.searchParams.get('error_description') || url.searchParams.get('error')
+  // implicit flow：Supabase 會自動從 URL hash 解析 session
+  const { data, error } = await supabase.auth.getSession()
 
-  if (oauthError) {
-    errorMessage.value = decodeURIComponent(oauthError)
+  if (error) {
+    errorMessage.value = error.message
     loading.value = false
     return
   }
 
-  if (code) {
-    const { data, error } = await supabase.auth.exchangeCodeForSession(code)
-    if (data.session) {
-      setSession(data.session.access_token, {
-        id: data.session.user.id,
-        email: data.session.user.email ?? '',
-      })
-      await navigateTo('/')
-      return
-    }
-    if (error) {
-      errorMessage.value = error.message
-      loading.value = false
-      return
-    }
-  }
-
-  // fallback：嘗試從現有 session 取得
-  const { data } = await supabase.auth.getSession()
   if (data.session) {
     setSession(data.session.access_token, {
       id: data.session.user.id,

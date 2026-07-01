@@ -11,6 +11,11 @@ export default defineNuxtConfig({
   ],
   supabase: {
     redirect: false,
+    clientOptions: {
+      auth: {
+        flowType: 'implicit',
+      },
+    },
   },
   runtimeConfig: {
     supabaseUrl: '',
