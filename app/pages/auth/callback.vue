@@ -15,30 +15,30 @@ onMounted(async () => {
     window.location.replace('/')
   }
 
-  // 先監聽，避免漏掉事件
-  const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-    if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session) {
-      subscription.unsubscribe()
-      handleSession(session)
-    }
-  })
+  const url = new URL(window.location.href)
+  const code = url.searchParams.get('code')
 
-  // 同時立即檢查是否已有 session（hash 可能已被解析）
-  const { data } = await supabase.auth.getSession()
-  if (data.session) {
-    subscription.unsubscribe()
-    handleSession(data.session)
-    return
+  if (code) {
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code)
+    if (data?.session) {
+      handleSession(data.session)
+      return
+    }
+    if (error) {
+      errorMessage.value = error.message
+      loading.value = false
+      return
+    }
   }
 
-  // 5 秒後若還沒進去則顯示錯誤
-  setTimeout(() => {
-    subscription.unsubscribe()
-    if (loading.value) {
-      errorMessage.value = '登入逾時，請回登入頁重試'
-      loading.value = false
-    }
-  }, 5000)
+  // implicit flow fallback：從現有 session 取得
+  const { data } = await supabase.auth.getSession()
+  if (data.session) {
+    handleSession(data.session)
+  } else {
+    errorMessage.value = '沒有取得登入 session，請回登入頁重試'
+    loading.value = false
+  }
 })
 </script>
 
