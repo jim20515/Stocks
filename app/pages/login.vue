@@ -11,9 +11,11 @@ const email = ref('')
 const password = ref('')
 const loading = ref(false)
 const error = ref('')
+const successMsg = ref('')
 
 async function submit() {
   error.value = ''
+  successMsg.value = ''
   if (!email.value || !password.value) { error.value = '請填寫 Email 和密碼'; return }
   loading.value = true
   try {
@@ -22,11 +24,16 @@ async function submit() {
       method: 'POST',
       body: { email: email.value, password: password.value },
     })
+    if (data.requiresConfirmation) {
+      successMsg.value = '註冊成功！請至信箱點擊確認連結後再登入。'
+      tab.value = 'login'
+      return
+    }
     setSession(data.accessToken, data.user)
     startBar()
     await navigateTo('/')
   } catch (e: any) {
-    error.value = e?.data?.message ?? '登入失敗，請再試一次'
+    error.value = e?.data?.message ?? (tab.value === 'login' ? '登入失敗，請再試一次' : '註冊失敗，請確認資料後再試')
   } finally {
     loading.value = false
   }
@@ -72,6 +79,10 @@ async function submit() {
           <label class="block text-xs font-medium text-slate-600 mb-1.5">密碼</label>
           <input v-model="password" type="password" placeholder="••••••••" autocomplete="current-password"
             class="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+        </div>
+
+        <div v-if="successMsg" class="text-xs text-green-600 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+          {{ successMsg }}
         </div>
 
         <div v-if="error" class="text-xs text-red-500 bg-red-50 border border-red-200 rounded-lg px-3 py-2">

@@ -12,7 +12,10 @@ export default defineEventHandler(async (event) => {
 
   const { data, error } = await client.auth.signUp({ email: normalizedEmail, password })
   if (error) throw createError({ statusCode: 400, message: '註冊失敗，請確認資料後再試' })
-  if (!data.session) throw createError({ statusCode: 400, message: '請至信箱確認帳號後再登入' })
+
+  if (!data.session) {
+    return { requiresConfirmation: true }
+  }
 
   return {
     accessToken: data.session.access_token,
