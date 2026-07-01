@@ -6,19 +6,32 @@ const { setSession } = useAuth()
 const errorMessage = ref('')
 const loading = ref(true)
 
-onMounted(() => {
+onMounted(async () => {
+  async function handleSession(session: any) {
+    setSession(session.access_token, {
+      id: session.user.id,
+      email: session.user.email ?? '',
+    })
+    await navigateTo('/')
+  }
+
+  // 先監聽，避免漏掉事件
   const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-    if (event === 'SIGNED_IN' && session) {
+    if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session) {
       subscription.unsubscribe()
-      setSession(session.access_token, {
-        id: session.user.id,
-        email: session.user.email ?? '',
-      })
-      await navigateTo('/')
+      await handleSession(session)
     }
   })
 
-  // 5 秒後若還沒登入則顯示錯誤
+  // 同時立即檢查是否已有 session（hash 可能已被解析）
+  const { data } = await supabase.auth.getSession()
+  if (data.session) {
+    subscription.unsubscribe()
+    await handleSession(data.session)
+    return
+  }
+
+  // 5 秒後若還沒進去則顯示錯誤
   setTimeout(() => {
     subscription.unsubscribe()
     if (loading.value) {
