@@ -20,6 +20,7 @@ async function loginWithGoogle() {
 }
 
 async function submit() {
+  if (loading.value) return
   error.value = ''
   if (!email.value || !password.value) { error.value = '請填寫 Email 和密碼'; return }
   loading.value = true
@@ -29,8 +30,7 @@ async function submit() {
       body: { email: email.value, password: password.value },
     })
     setSession(data.accessToken, data.user)
-    startBar()
-    await navigateTo('/')
+    window.location.replace('/')
   } catch (e: any) {
     const msg = e?.data?.message
     error.value = (typeof msg === 'string' && msg) ? msg : '登入失敗，請再試一次'

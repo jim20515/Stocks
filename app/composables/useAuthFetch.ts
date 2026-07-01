@@ -8,7 +8,8 @@ export function useAuthFetch<T>(url: string, opts: Omit<Parameters<typeof useFet
     async onResponseError({ response }) {
       if (response.status === 401) {
         clearSession()
-        await navigateTo('/login')
+        if (import.meta.client) window.location.replace('/login')
+        else await navigateTo('/login')
       }
     },
   })

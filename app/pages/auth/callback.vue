@@ -2,48 +2,30 @@
 definePageMeta({ layout: false })
 
 const { setSession } = useAuth()
-const supabase = useSupabaseClient()
 const errorMessage = ref('')
 const loading = ref(true)
 
-onMounted(async () => {
-  const url = new URL(window.location.href)
-  const code = url.searchParams.get('code')
-  const oauthError = url.searchParams.get('error_description') || url.searchParams.get('error')
+const supabaseSession = useSupabaseSession()
 
-  if (oauthError) {
-    errorMessage.value = decodeURIComponent(oauthError)
-    loading.value = false
-    return
+// plugin 會自動交換 code 並更新 supabaseSession
+watch(supabaseSession, (session) => {
+  if (session?.user) {
+    setSession(session.access_token, {
+      id: session.user.id,
+      email: session.user.email ?? '',
+    })
+    window.location.replace('/')
   }
+}, { immediate: true })
 
-  if (!code) {
-    errorMessage.value = '缺少授權碼，請重新登入'
-    loading.value = false
-    return
-  }
-
-  let session = (await supabase.auth.getSession()).data.session
-
-  if (!session) {
-    const { data, error } = await supabase.auth.exchangeCodeForSession(code)
-    session = data.session
-
-    if (error && !session) {
-      session = (await supabase.auth.getSession()).data.session
-      if (!session) {
-        errorMessage.value = error.message
-        loading.value = false
-        return
-      }
+// 5 秒後還沒完成就顯示錯誤
+onMounted(() => {
+  setTimeout(() => {
+    if (loading.value) {
+      errorMessage.value = '登入逾時，請回登入頁重試'
+      loading.value = false
     }
-  }
-
-  setSession(session.access_token, {
-    id: session.user.id,
-    email: session.user.email ?? '',
-  })
-  window.location.replace('/')
+  }, 5000)
 })
 </script>
 
