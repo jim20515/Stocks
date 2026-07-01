@@ -12,7 +12,11 @@ export default defineEventHandler(async (event) => {
   const cookies: Record<string, string> = {}
   const newCookies: string[] = []
 
+  const projectRef = new URL(url).hostname.split('.')[0]
+  const cookieName = `sb-${projectRef}-auth-token`
+
   const supabase = createServerClient(url, key, {
+    cookieOptions: { name: cookieName },
     cookies: {
       getAll() {
         return parseCookieHeader(getHeader(event, 'cookie') ?? '')
