@@ -8,7 +8,7 @@ function isTokenExpired(token: string): boolean {
 }
 
 export default defineNuxtRouteMiddleware((to) => {
-  if (to.path === '/login') return
+  if (to.path === '/login' || to.path === '/auth/callback') return
   const { token, clearSession } = useAuth()
   if (!token.value || isTokenExpired(token.value)) {
     clearSession()
