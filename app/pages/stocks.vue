@@ -78,16 +78,43 @@ function goPage(p: number) {
   currentPage.value = p
 }
 
-async function remove(id: number, name: string) {
-  if (!confirm(`確定刪除「${name}」？`)) return
-  await $fetch(`/api/stockholdings/${id}`, { method: 'DELETE', headers: authHeaders.value as HeadersInit })
-  await refresh()
+// 刪除確認彈跳視窗（取代原生 confirm）
+const confirmDialog = ref<{ title: string; message: string; okText: string; onOk: () => Promise<void> } | null>(null)
+const confirmLoading = ref(false)
+
+function askRemove(id: number, name: string) {
+  confirmDialog.value = {
+    title: '刪除這筆交易',
+    message: `確定刪除「${name}」這筆交易記錄？此操作無法復原。`,
+    okText: '刪除',
+    onOk: async () => {
+      await $fetch(`/api/stockholdings/${id}`, { method: 'DELETE', headers: authHeaders.value as HeadersInit })
+      await refresh()
+    },
+  }
 }
 
-async function removeAll() {
-  if (!confirm('確定刪除全部交易記錄？此操作無法復原。')) return
-  await $fetch('/api/stockholdings/all', { method: 'DELETE', headers: authHeaders.value as HeadersInit })
-  await refresh()
+function askRemoveAll() {
+  confirmDialog.value = {
+    title: '刪除全部交易記錄',
+    message: '確定刪除全部交易記錄？所有持股資料都會被清空，此操作無法復原。',
+    okText: '全部刪除',
+    onOk: async () => {
+      await $fetch('/api/stockholdings/all', { method: 'DELETE', headers: authHeaders.value as HeadersInit })
+      await refresh()
+    },
+  }
+}
+
+async function confirmOk() {
+  if (!confirmDialog.value) return
+  confirmLoading.value = true
+  try {
+    await confirmDialog.value.onOk()
+    confirmDialog.value = null
+  } finally {
+    confirmLoading.value = false
+  }
 }
 
 function money(v: any) { return Number(v).toLocaleString('zh-TW') }
@@ -180,7 +207,7 @@ async function refreshPrices() {
       <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
         <h3 class="text-sm font-semibold text-slate-800">交易明細</h3>
         <div class="flex items-center gap-2">
-          <button @click="removeAll"
+          <button @click="askRemoveAll"
             class="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-red-500 border border-red-200 rounded-lg hover:bg-red-50 transition">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -337,7 +364,7 @@ async function refreshPrices() {
                         d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                     </svg>
                   </button>
-                  <button @click="remove(h.id, h.stockName)"
+                  <button @click="askRemove(h.id, h.stockName)"
                     class="p-1.5 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500 transition">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -386,5 +413,36 @@ async function refreshPrices() {
         </div>
       </div>
     </div>
+
+    <!-- 刪除確認彈跳視窗 -->
+    <Teleport to="body">
+      <div v-if="confirmDialog"
+        class="fixed inset-0 bg-black/40 z-[70] flex items-center justify-center p-4"
+        @click.self="!confirmLoading && (confirmDialog = null)">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 text-center">
+          <div class="w-10 h-10 mx-auto mb-3 rounded-full bg-red-50 text-red-500 flex items-center justify-center">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          </div>
+          <h2 class="text-base font-semibold text-slate-800 mb-1">{{ confirmDialog.title }}</h2>
+          <p class="text-sm text-slate-500 mb-5 leading-6">{{ confirmDialog.message }}</p>
+          <div class="flex gap-2">
+            <button @click="confirmDialog = null" :disabled="confirmLoading"
+              class="flex-1 px-4 py-2 rounded-lg text-sm text-slate-600 border border-slate-200 hover:bg-slate-50 disabled:opacity-50 transition">
+              取消
+            </button>
+            <button @click="confirmOk" :disabled="confirmLoading"
+              class="flex-1 flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white bg-red-500 hover:bg-red-600 disabled:opacity-50 transition">
+              <svg v-if="confirmLoading" class="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-width="2" d="M21 12a9 9 0 11-6.219-8.56" />
+              </svg>
+              {{ confirmLoading ? '刪除中…' : confirmDialog.okText }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
