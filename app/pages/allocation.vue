@@ -92,15 +92,41 @@ const aggregatedItems = computed(() => {
       map[h.stockCode].totalBuyShares += h.shares
     }
   }
-  return Object.values(map).filter(h => h.shares > 0).map(h => ({
-    ...h,
-    shares: h.shares,
-    marketValue: Math.round(h.marketValue),
-    avgCost: h.totalBuyShares > 0 ? Math.round(h.totalBuyCost / h.totalBuyShares * 100) / 100 : null,
-    allocation: totalValue > 0 ? h.marketValue / totalValue : 0,
-    betaContrib: totalValue > 0 ? (h.marketValue / totalValue) * h.leverageMultiplier : 0,
-  }))
+  return Object.values(map).filter(h => h.shares > 0).map(h => {
+    const avgCost = h.totalBuyShares > 0 ? Math.round(h.totalBuyCost / h.totalBuyShares * 100) / 100 : null
+    const marketValue = Math.round(h.marketValue)
+    // 類現金（0x）無成本概念
+    const totalCost = (avgCost != null && h.leverageMultiplier !== 0) ? Math.round(avgCost * h.shares) : null
+    const profit = totalCost != null ? marketValue - totalCost : null
+    const profitPct = (totalCost != null && totalCost > 0) ? Math.round(profit! / totalCost * 10000) / 100 : null
+    return {
+      ...h,
+      shares: h.shares,
+      marketValue,
+      avgCost,
+      totalCost,
+      profit,
+      profitPct,
+      allocation: totalValue > 0 ? h.marketValue / totalValue : 0,
+      betaContrib: totalValue > 0 ? (h.marketValue / totalValue) * h.leverageMultiplier : 0,
+    }
+  })
 })
+
+// 合計（僅股票部位，現金無成本/損益）
+const totalsRow = computed(() => {
+  let cost = 0, value = 0
+  for (const h of aggregatedItems.value) {
+    if (h.totalCost != null) { cost += h.totalCost; value += h.marketValue }
+  }
+  const profit = value - cost
+  const profitPct = cost > 0 ? Math.round(profit / cost * 10000) / 100 : null
+  return { cost, profit, profitPct }
+})
+
+function pnlClass(v: any) { return v == null ? 'text-slate-400' : Number(v) > 0 ? 'text-red-500' : Number(v) < 0 ? 'text-green-600' : 'text-slate-400' }
+function signMoney(v: any) { return v == null ? '—' : (Number(v) >= 0 ? '+' : '') + Number(v).toLocaleString('zh-TW') }
+function pctSigned(v: any) { return v == null ? '—' : (Number(v) >= 0 ? '+' : '') + Number(v).toFixed(2) + '%' }
 
 // 排序
 const sortKey = ref<string>('')
@@ -299,10 +325,18 @@ function goPage(p: number) {
               <th class="text-right px-4 py-3 text-xs font-medium text-slate-500 cursor-pointer select-none hover:text-indigo-600" @click="toggleSort('marketValue')">
                 市值 <span class="ml-1 opacity-50">{{ sortKey === 'marketValue' ? (sortDir === 'asc' ? '↑' : '↓') : '↕' }}</span>
               </th>
+              <th class="text-right px-4 py-3 text-xs font-medium text-slate-500 cursor-pointer select-none hover:text-indigo-600" @click="toggleSort('totalCost')">
+                總成本 <span class="ml-1 opacity-50">{{ sortKey === 'totalCost' ? (sortDir === 'asc' ? '↑' : '↓') : '↕' }}</span>
+              </th>
+              <th class="text-right px-4 py-3 text-xs font-medium text-slate-500 cursor-pointer select-none hover:text-indigo-600" @click="toggleSort('profit')">
+                總獲利 <span class="ml-1 opacity-50">{{ sortKey === 'profit' ? (sortDir === 'asc' ? '↑' : '↓') : '↕' }}</span>
+              </th>
+              <th class="text-right px-4 py-3 text-xs font-medium text-slate-500 cursor-pointer select-none hover:text-indigo-600" @click="toggleSort('profitPct')">
+                獲利% <span class="ml-1 opacity-50">{{ sortKey === 'profitPct' ? (sortDir === 'asc' ? '↑' : '↓') : '↕' }}</span>
+              </th>
               <th class="text-right px-4 py-3 text-xs font-medium text-slate-500 cursor-pointer select-none hover:text-indigo-600" @click="toggleSort('allocation')">
                 佔比 <span class="ml-1 opacity-50">{{ sortKey === 'allocation' ? (sortDir === 'asc' ? '↑' : '↓') : '↕' }}</span>
               </th>
-              <th class="text-right px-4 py-3 text-xs font-medium text-slate-500">槓桿</th>
               <th class="text-right px-4 py-3 text-xs font-medium text-slate-500 cursor-pointer select-none hover:text-indigo-600" @click="toggleSort('betaContrib')">
                 Beta 貢獻 <span class="ml-1 opacity-50">{{ sortKey === 'betaContrib' ? (sortDir === 'asc' ? '↑' : '↓') : '↕' }}</span>
               </th>
@@ -335,10 +369,10 @@ function goPage(p: number) {
                 {{ h.leverageMultiplier === 0 ? '—' : (h.avgCost != null ? h.avgCost.toLocaleString() : '—') }}
               </td>
               <td class="px-4 py-3.5 text-right font-medium text-slate-800">{{ money(h.marketValue) }}</td>
+              <td class="px-4 py-3.5 text-right text-slate-600">{{ h.totalCost != null ? money(h.totalCost) : '—' }}</td>
+              <td class="px-4 py-3.5 text-right font-medium" :class="pnlClass(h.profit)">{{ signMoney(h.profit) }}</td>
+              <td class="px-4 py-3.5 text-right font-medium" :class="pnlClass(h.profitPct)">{{ pctSigned(h.profitPct) }}</td>
               <td class="px-4 py-3.5 text-right text-slate-600">{{ pct(h.allocation) }}</td>
-              <td class="px-4 py-3.5 text-right">
-                <span class="font-mono font-semibold text-slate-700">{{ h.leverageMultiplier }}x</span>
-              </td>
               <td class="px-4 py-3.5 text-right font-mono font-bold text-indigo-600">
                 {{ h.betaContrib.toFixed(4) }}
               </td>
@@ -362,16 +396,20 @@ function goPage(p: number) {
               <td class="px-4 py-3.5 text-right text-slate-400">—</td>
               <td class="px-4 py-3.5 text-right text-slate-400"></td>
               <td class="px-4 py-3.5 text-right font-medium text-slate-800">{{ money(d.cash.amount) }}</td>
+              <td class="px-4 py-3.5 text-right text-slate-400">—</td>
+              <td class="px-4 py-3.5 text-right text-slate-400">—</td>
+              <td class="px-4 py-3.5 text-right text-slate-400">—</td>
               <td class="px-4 py-3.5 text-right text-slate-600">{{ pct(d.cash.allocation) }}</td>
-              <td class="px-4 py-3.5 text-right font-mono font-semibold text-slate-400">0x</td>
               <td class="px-4 py-3.5 text-right font-mono font-bold text-slate-300">0.0000</td>
             </tr>
             <tr class="bg-indigo-50 font-semibold">
               <td class="px-5 py-3 text-slate-700">合計</td>
               <td></td><td></td><td></td><td></td>
               <td class="px-4 py-3 text-right text-slate-800">{{ money(d.totalValue) }}</td>
+              <td class="px-4 py-3 text-right text-slate-700">{{ money(totalsRow.cost) }}</td>
+              <td class="px-4 py-3 text-right" :class="pnlClass(totalsRow.profit)">{{ signMoney(totalsRow.profit) }}</td>
+              <td class="px-4 py-3 text-right" :class="pnlClass(totalsRow.profitPct)">{{ pctSigned(totalsRow.profitPct) }}</td>
               <td class="px-4 py-3 text-right text-slate-600">100%</td>
-              <td></td>
               <td class="px-4 py-3 text-right font-mono text-indigo-700 text-base">{{ d.currentBeta }}</td>
             </tr>
           </tbody>
