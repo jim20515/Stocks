@@ -83,6 +83,7 @@ async function runResult() {
 // ── 存成 / 載入 / 刪除 群組 ──
 const battleName = ref('')
 const saving = ref(false)
+const showBattlesModal = ref(false)
 
 async function saveBattle() {
   if (!battleName.value.trim()) { error.value = '請輸入群組名稱'; return }
@@ -118,6 +119,7 @@ async function loadBattle(b: any) {
   startDate.value = b.filter_start_date ?? ''
   endDate.value = b.filter_end_date ?? ''
   includeFee.value = b.include_fee !== false
+  showBattlesModal.value = false
   await runResult()
 }
 
@@ -171,9 +173,19 @@ const detailRows = computed<Row[]>(() => {
 
 <template>
   <div class="space-y-5">
-    <div>
-      <h2 class="text-lg font-bold text-slate-800">策略實戰</h2>
-      <p class="text-xs text-slate-400 mt-0.5">從持股管理挑出真實交易，用先進後出（LIFO）逐批配對計算實際損益。可先建立群組，之後符合的交易會自動納入</p>
+    <div class="flex items-start justify-between gap-3">
+      <div>
+        <h2 class="text-lg font-bold text-slate-800">策略實戰</h2>
+        <p class="text-xs text-slate-400 mt-0.5">從持股管理挑出真實交易，用先進後出（LIFO）逐批配對計算實際損益。可先建立群組，之後符合的交易會自動納入</p>
+      </div>
+      <button @click="showBattlesModal = true"
+        class="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-indigo-600 border border-indigo-200 rounded-lg hover:bg-indigo-50 transition">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 12h14M5 16h14" />
+        </svg>
+        我的實戰群組
+        <span v-if="battles?.length" class="inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-600">{{ battles.length }}</span>
+      </button>
     </div>
 
     <!-- 設定卡片 -->
@@ -255,23 +267,6 @@ const detailRows = computed<Row[]>(() => {
       <p class="text-xs text-slate-400">一次分析一隻股票，用先進後出（LIFO）配對。帳戶與日期可選填縮小範圍；若賣出的對應買入落在起始日之前（被切掉），該筆賣出仍會列出、但庫存維持 0、不計損益（僅呈現）。存成群組後，之後在持股管理新增的同代號交易會自動納入。</p>
     </div>
 
-    <!-- 已存實戰群組 -->
-    <div v-if="battles?.length" class="bg-white rounded-xl border border-slate-200 p-5">
-      <p class="text-sm font-semibold text-slate-700 mb-3">我的實戰群組</p>
-      <div class="space-y-2">
-        <div v-for="b in battles" :key="b.id"
-          class="flex items-center gap-3 px-4 py-3 border border-slate-100 rounded-lg hover:bg-slate-50/60 transition">
-          <button @click="loadBattle(b)" class="flex-1 text-left">
-            <span class="text-sm font-medium text-slate-700">{{ b.name }}</span>
-            <span class="block text-xs text-slate-400 mt-0.5">{{ ruleSummary(b) }}</span>
-          </button>
-          <button @click="loadBattle(b)" class="text-xs text-indigo-600 hover:text-indigo-700 font-medium">重新計算</button>
-          <button @click="deleteBattle(b.id)" class="text-slate-300 hover:text-red-400 transition" title="刪除">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-          </button>
-        </div>
-      </div>
-    </div>
 
     <!-- 結果 -->
     <template v-if="result">
@@ -363,5 +358,39 @@ const detailRows = computed<Row[]>(() => {
         </div>
       </template>
     </template>
+
+    <!-- 我的實戰群組 彈跳視窗 -->
+    <Teleport to="body">
+      <div v-if="showBattlesModal"
+        class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+        @click.self="showBattlesModal = false">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[80vh] flex flex-col">
+          <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+            <p class="text-base font-semibold text-slate-800">我的實戰群組</p>
+            <button @click="showBattlesModal = false" class="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 transition">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <div class="overflow-y-auto p-4 space-y-2">
+            <div v-if="!battles?.length" class="py-10 text-center text-sm text-slate-400">
+              尚無實戰群組。<br>設定股票與條件、試算後點「存成實戰群組」即可建立。
+            </div>
+            <div v-for="b in battles" :key="b.id"
+              class="flex items-center gap-3 px-4 py-3 border border-slate-100 rounded-lg hover:bg-slate-50/60 transition">
+              <button @click="loadBattle(b)" class="flex-1 text-left">
+                <span class="text-sm font-medium text-slate-700">{{ b.name }}</span>
+                <span class="block text-xs text-slate-400 mt-0.5">{{ ruleSummary(b) }}</span>
+              </button>
+              <button @click="loadBattle(b)" class="text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 px-3 py-1.5 rounded-lg transition">載入計算</button>
+              <button @click="deleteBattle(b.id)" class="text-slate-300 hover:text-red-400 transition" title="刪除">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
