@@ -12,6 +12,29 @@ export function useBacktestUpdate() {
     return d.toLocaleDateString('sv-SE', { timeZone: 'Asia/Taipei' })
   }
 
+  // 更新單一股票到今天（回測前呼叫）。回傳最終資料庫最新日期。
+  async function updateOneLatest(code: string): Promise<string | null> {
+    const latest = await $fetch<{ latestDate: string | null }>('/api/backtest/latest-date', {
+      headers: authHeaders.value as HeadersInit,
+      query: { code },
+    })
+    if (latest.latestDate && latest.latestDate >= today) return latest.latestDate
+    let cursor: string | null = latest.latestDate ? nextDate(latest.latestDate) : '2000-01-01'
+    let last = latest.latestDate
+    let guard = 0
+    while (cursor && guard < 100) {
+      const res = await $fetch<any>('/api/backtest/history', {
+        method: 'POST',
+        headers: authHeaders.value as HeadersInit,
+        body: { code, startDate: cursor, endDate: today, maxMonths: 6 },
+      })
+      if (res?.latestDate) last = res.latestDate
+      cursor = res.nextStartDate
+      guard++
+    }
+    return last
+  }
+
   async function updateAllLatestPrices() {
     if (updating.value) return
     updating.value = true
@@ -53,5 +76,5 @@ export function useBacktestUpdate() {
     }
   }
 
-  return { updating, progress, updateAllLatestPrices }
+  return { updating, progress, updateAllLatestPrices, updateOneLatest }
 }

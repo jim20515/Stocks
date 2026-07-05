@@ -30,7 +30,10 @@ type DividendRow = {
   dividend_per_share: number
 }
 
-const { updating: updatingAllLatest, progress: updateAllProgress } = useBacktestUpdate()
+const { updating: updatingAllLatest, progress: updateAllProgress, updateOneLatest } = useBacktestUpdate()
+
+// 回測後：實際資料區間不足使用者輸入時的提醒
+const dataWarnings = ref<string[]>([])
 
 // ── 股票搜尋下拉 ─────────────────────────────────────────────
 const { data: allCodesData } = await useFetch<any>(codesUrl, {
@@ -237,11 +240,24 @@ async function runBacktest() {
   showResult.value = true
   prices.value = []
   dividends.value = []
-  progressText.value = '從資料庫讀取回測資料...'
+  dataWarnings.value = []
 
   try {
     const normalizedCode = code.value.trim().toUpperCase()
-    // 訪客用公開股價；配息資料需登入，訪客略過（視為無配息）
+
+    // 1) 先把該檔股票更新到最新（共用股價表，大家受惠）
+    //    會員用自己的 token；訪客走公開端點（server 端用 service key 寫入）
+    progressText.value = '正在更新最新股價...'
+    try {
+      if (isGuest.value) {
+        await $fetch('/api/public/update-latest', { method: 'POST', body: { code: normalizedCode } })
+      } else {
+        await updateOneLatest(normalizedCode)
+      }
+    } catch { /* 更新失敗不中斷，仍用現有資料回測 */ }
+
+    // 2) 讀取區間資料再回測（訪客用公開股價；配息需登入，訪客視為無配息）
+    progressText.value = '讀取回測資料...'
     const [priceRes, divRes] = await Promise.all([
       $fetch<any>(pricesUrl, {
         headers: authHeaders.value as HeadersInit,
@@ -260,7 +276,23 @@ async function runBacktest() {
 
     if (!prices.value.length) {
       error.value = '資料庫尚無此區間價格，請先到「更新歷史數據」更新價格'
+      return
     }
+
+    // 3) 實際資料區間不足使用者輸入時提醒
+    const actualStart = prices.value[0].date
+    const actualEnd = prices.value[prices.value.length - 1].date
+    const warns: string[] = []
+    if (actualStart > startDate.value) {
+      warns.push(`起始日 ${startDate.value} 早於此股最早資料 ${actualStart}，實際從 ${actualStart} 起算`)
+    }
+    // 結束日：已先更新到最新，週末/當天未收盤本來就差幾天（正常）；
+    // 只有資料明顯落後（>7 天，代表可能沒更新成功）才提醒。
+    const endGapDays = Math.round((new Date(endDate.value).getTime() - new Date(actualEnd).getTime()) / 86400000)
+    if (endGapDays > 7) {
+      warns.push(`此股最新資料只到 ${actualEnd}（距結束日 ${endDate.value} 已 ${endGapDays} 天），可能尚未更新到更近期的交易資料`)
+    }
+    dataWarnings.value = warns
   } catch (e: any) {
     error.value = e?.data?.message ?? '回測資料讀取失敗'
   } finally {
@@ -376,6 +408,14 @@ async function updateDividends() {
       <p v-if="updateAllProgress" class="text-xs text-indigo-500 mt-2">{{ updateAllProgress }}</p>
       <p v-if="progressText" class="text-xs text-indigo-500 mt-2">{{ progressText }}</p>
       <p v-if="error" class="text-xs text-red-500 mt-2">{{ error }}</p>
+      <div v-if="dataWarnings.length" class="mt-3 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 space-y-1">
+        <p v-for="(w, i) in dataWarnings" :key="i" class="text-xs text-amber-700 flex items-start gap-1.5">
+          <svg class="w-3.5 h-3.5 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+          </svg>
+          {{ w }}
+        </p>
+      </div>
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">

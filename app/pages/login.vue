@@ -82,10 +82,6 @@ async function submit() {
       </form>
 
       <div class="mt-4">
-        <div class="relative flex items-center justify-center mb-4">
-          <div class="absolute inset-0 flex items-center"><div class="w-full border-t border-slate-200"></div></div>
-          <span class="relative bg-white px-3 text-xs text-slate-400">或</span>
-        </div>
         <button type="button" @click="loginWithGoogle"
           class="w-full flex items-center justify-center gap-2.5 py-2.5 border border-slate-200 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 transition">
           <svg class="w-4 h-4" viewBox="0 0 24 24">
@@ -96,6 +92,19 @@ async function submit() {
           </svg>
           使用 Google 登入
         </button>
+
+        <div class="relative flex items-center justify-center my-4">
+          <div class="absolute inset-0 flex items-center"><div class="w-full border-t border-slate-200"></div></div>
+          <span class="relative bg-white px-3 text-xs text-slate-400">或</span>
+        </div>
+
+        <NuxtLink to="/"
+          class="w-full flex items-center justify-center gap-1.5 py-2.5 text-sm font-medium text-slate-500 hover:text-indigo-600 hover:bg-slate-50 rounded-lg transition">
+          先不登入，直接看看
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+          </svg>
+        </NuxtLink>
       </div>
 
       <div class="mt-6 pt-5 border-t border-slate-100">

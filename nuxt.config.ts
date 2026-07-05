@@ -16,6 +16,7 @@ export default defineNuxtConfig({
   runtimeConfig: {
     supabaseUrl: '',
     supabaseKey: '',
+    supabaseServiceKey: '',
     anthropicApiKey: '',
     public: {
       supabase: {
