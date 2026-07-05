@@ -13,6 +13,8 @@ export default defineEventHandler(async (event) => {
   const { data, error } = await client.auth.signUp({ email: normalizedEmail, password })
   if (error) throw createError({ statusCode: 400, message: error.message })
 
+  await logEvent(event, 'auth.register', { email: normalizedEmail }, data.user?.id ?? null)
+
   if (!data.session) {
     return { requiresConfirmation: true }
   }

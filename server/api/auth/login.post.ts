@@ -13,6 +13,8 @@ export default defineEventHandler(async (event) => {
   const { data, error } = await client.auth.signInWithPassword({ email: normalizedEmail, password })
   if (error) throw createError({ statusCode: 401, message: 'Email 或密碼錯誤' })
 
+  await logEvent(event, 'auth.login', { email: data.user.email }, data.user.id)
+
   return {
     accessToken: data.session.access_token,
     refreshToken: data.session.refresh_token,
