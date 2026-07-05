@@ -1,6 +1,7 @@
 <script setup lang="ts">
 const { authHeaders } = useAuth()
-const { data: summary } = await useAuthFetch<any>('/api/portfolio/beta-summary')
+const { isGuest } = useGuestGate()
+const { data: summary } = await useAppData<any>('/api/portfolio/beta-summary', {}, DEMO_BETA)
 
 // 依 stockCode 去重，取唯一持股清單
 const holdings = computed(() => {
@@ -65,7 +66,10 @@ async function loadWatermark() {
   loading.value = true
   result.value = null
   try {
-    result.value = await $fetch<any>(`/api/portfolio/watermark/${selected.value}`, { headers: authHeaders.value as HeadersInit })
+    // 訪客：用公開水位分析（真實 ATH/現價，不需登入、不需持有）
+    result.value = isGuest.value
+      ? await $fetch<any>('/api/public/watermark', { query: { code: selected.value } })
+      : await $fetch<any>(`/api/portfolio/watermark/${selected.value}`, { headers: authHeaders.value as HeadersInit })
   } finally {
     loading.value = false
   }

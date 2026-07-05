@@ -1,7 +1,8 @@
 <script setup lang="ts">
 const { authHeaders } = useAuth()
-const { data: projection, refresh: refreshProjection } = await useAuthFetch<any>('/api/portfolio/life-projection', { key: 'life-projection' })
-const { data: settings } = await useAuthFetch<any>('/api/portfolio/settings', { key: 'life-settings' })
+const { isGuest, promptLogin } = useGuestGate()
+const { data: projection, refresh: refreshProjection } = await useAppData<any>('/api/portfolio/life-projection', { key: 'life-projection' }, DEMO_PROJECTION)
+const { data: settings } = await useAppData<any>('/api/portfolio/settings', { key: 'life-settings' }, DEMO_SETTINGS)
 
 const form = ref<Record<string, any>>({})
 const saving = ref(false)
@@ -23,7 +24,43 @@ watch(settings, (s) => {
 
 const errorMsg = ref('')
 
+// 依表單即時試算資產成長（與後端 life-projection 同一套公式），訪客用它看結果
+function computeProjection(f: Record<string, any>) {
+  const startInvestYear = Number(f.startInvestYear)
+  const initialAge = Number(f.initialAge)
+  const initialAmount = Number(String(f.initialAmount).replace(/,/g, ''))
+  const contrib = Number(String(f.annualContribution).replace(/,/g, ''))
+  const stopYear = Number(f.stopContributionYear)
+  const rate = Number(f.expectedAnnualReturn) / 100
+  const endYear = startInvestYear + (90 - initialAge)
+  const rows: any[] = []
+  let assets = initialAmount
+  let totalContrib = 0
+  for (let year = startInvestYear; year <= endYear; year++) {
+    const age = initialAge + (year - startInvestYear)
+    const interest = Math.round(assets - initialAmount - totalContrib)
+    rows.push({ year, age, assets: Math.round(assets), starting: initialAmount, contributions: Math.round(totalContrib), interest: Math.max(0, interest) })
+    const contribution = year < stopYear ? contrib : 0
+    totalContrib += contribution
+    assets = (assets + contribution) * (1 + rate)
+  }
+  return {
+    currentYear: new Date().getFullYear(),
+    startInvestYear, initialAge,
+    settings: { startInvestYear, initialAge, initialAmount, annualContribution: contrib, stopContributionYear: stopYear, expectedAnnualReturn: rate },
+    rows,
+  }
+}
+
+// 訪客：按鈕改為即時試算（不儲存）；會員：儲存到帳號
+function applyGuest() {
+  projection.value = computeProjection(form.value)
+  msg.value = '已試算（登入後可儲存）'
+  setTimeout(() => msg.value = '', 2500)
+}
+
 async function save() {
+  if (isGuest.value) return promptLogin()
   saving.value = true
   errorMsg.value = ''
   try {
@@ -120,10 +157,11 @@ const milestones = computed(() => {
         </div>
       </div>
       <div class="flex items-center gap-3 mt-4">
-        <button @click="save" :disabled="saving"
+        <button @click="isGuest ? applyGuest() : save()" :disabled="saving"
           class="px-5 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition disabled:opacity-50">
-          {{ saving ? '儲存中…' : '套用設定' }}
+          {{ saving ? '儲存中…' : isGuest ? '試算' : '套用設定' }}
         </button>
+        <span v-if="isGuest" class="text-xs text-slate-400">登入後可將這組設定存進帳號</span>
         <span v-if="msg" class="text-sm text-green-600 font-medium">✓ {{ msg }}</span>
         <span v-if="errorMsg" class="text-sm text-red-500 font-medium">✕ {{ errorMsg }}</span>
       </div>

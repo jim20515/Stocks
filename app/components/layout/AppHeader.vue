@@ -2,7 +2,13 @@
 const route = useRoute()
 const emit = defineEmits(['add', 'import', 'logout', 'menu'])
 const { user } = useAuth()
+const { isGuest, promptLogin } = useGuestGate()
 const { updating: backtestUpdating, progress: backtestProgress, updateAllLatestPrices } = useBacktestUpdate()
+
+function onUpdatePrices() {
+  if (isGuest.value) return promptLogin()
+  updateAllLatestPrices()
+}
 
 const titleMap: Record<string, string> = {
   '/':           '總覽儀表板',
@@ -86,7 +92,7 @@ function hideTip() { tooltip.value = null }
           </button>
         </template>
         <template v-if="route.path === '/backtest' || route.path === '/backtest/strategy'">
-          <button @click="updateAllLatestPrices" :disabled="backtestUpdating"
+          <button @click="onUpdatePrices" :disabled="backtestUpdating"
             @mouseenter="showTip($event, '更新所有資料庫股票最新價格')"
             @mouseleave="hideTip"
             class="hidden sm:inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-60 transition">
@@ -97,15 +103,25 @@ function hideTip() { tooltip.value = null }
           </button>
         </template>
         <div class="flex items-center gap-2 border-l border-slate-200 pl-2 sm:pl-3 ml-1">
-          <span class="text-xs text-slate-400 hidden sm:block">{{ user?.email }}</span>
-          <button @click="emit('logout')"
-            class="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition"
-            title="登出">
+          <!-- 訪客：登入/註冊；會員：email + 登出 -->
+          <NuxtLink v-if="isGuest" to="/login"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
             </svg>
-          </button>
+            登入 / 註冊
+          </NuxtLink>
+          <template v-else>
+            <span class="text-xs text-slate-400 hidden sm:block">{{ user?.email }}</span>
+            <button @click="emit('logout')"
+              class="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition"
+              title="登出">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+            </button>
+          </template>
         </div>
       </div>
     </div>

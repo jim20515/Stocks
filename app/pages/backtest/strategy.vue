@@ -1,11 +1,16 @@
 <script setup lang="ts">
 const { authHeaders } = useAuth()
+const { isGuest } = useGuestGate()
 const { updating: updatingAllLatest, progress: updateAllProgress, updateAllLatestPrices } = useBacktestUpdate()
 
 const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Taipei' })
 
+// 訪客用公開股價來源；會員用綁定追蹤清單的來源
+const codesUrl = isGuest.value ? '/api/public/codes' : '/api/backtest/all-codes'
+const pricesUrl = isGuest.value ? '/api/public/prices' : '/api/backtest/prices'
+
 // ── 股票選擇 ───────────────────────────────────────────────
-const { data: allCodesData } = await useFetch<any>('/api/backtest/all-codes', {
+const { data: allCodesData } = await useFetch<any>(codesUrl, {
   headers: authHeaders.value as HeadersInit,
 })
 // 收藏股票（存 localStorage）
@@ -575,7 +580,7 @@ async function runBacktest() {
   result.value = null
 
   try {
-    const data = await $fetch<{ prices: { date: string; close_price: number }[] }>('/api/backtest/prices', {
+    const data = await $fetch<{ prices: { date: string; close_price: number }[] }>(pricesUrl, {
       headers: authHeaders.value as HeadersInit,
       query: { code: selectedCode.value, startDate: startDate.value, endDate: endDate.value },
     })

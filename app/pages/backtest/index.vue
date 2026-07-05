@@ -1,5 +1,10 @@
 <script setup lang="ts">
 const { authHeaders } = useAuth()
+const { isGuest, promptLogin } = useGuestGate()
+
+// 訪客用公開股價來源；會員用綁定追蹤清單的來源
+const codesUrl = isGuest.value ? '/api/public/codes' : '/api/backtest/all-codes'
+const pricesUrl = isGuest.value ? '/api/public/prices' : '/api/backtest/prices'
 
 type PriceRow = {
   date: string
@@ -28,7 +33,7 @@ type DividendRow = {
 const { updating: updatingAllLatest, progress: updateAllProgress } = useBacktestUpdate()
 
 // ── 股票搜尋下拉 ─────────────────────────────────────────────
-const { data: allCodesData } = await useFetch<any>('/api/backtest/all-codes', {
+const { data: allCodesData } = await useFetch<any>(codesUrl, {
   headers: authHeaders.value as HeadersInit,
 })
 const allStocks = computed(() => {
@@ -120,6 +125,7 @@ async function fetchFirstTradingDate(normalizedCode: string) {
 }
 
 async function lookupFirstDate() {
+  if (isGuest.value) return   // first-date 需登入；訪客略過自動帶入
   const normalizedCode = code.value.trim().toUpperCase()
   if (normalizedCode.length < 4 || normalizedCode === lastLookupCode.value) return
 
@@ -235,15 +241,18 @@ async function runBacktest() {
 
   try {
     const normalizedCode = code.value.trim().toUpperCase()
+    // 訪客用公開股價；配息資料需登入，訪客略過（視為無配息）
     const [priceRes, divRes] = await Promise.all([
-      $fetch<any>('/api/backtest/prices', {
+      $fetch<any>(pricesUrl, {
         headers: authHeaders.value as HeadersInit,
         query: { code: normalizedCode, startDate: startDate.value, endDate: endDate.value },
       }),
-      $fetch<any>('/api/backtest/dividends', {
-        headers: authHeaders.value as HeadersInit,
-        query: { code: normalizedCode, startDate: startDate.value, endDate: endDate.value },
-      }),
+      isGuest.value
+        ? Promise.resolve({ dividends: [] })
+        : $fetch<any>('/api/backtest/dividends', {
+            headers: authHeaders.value as HeadersInit,
+            query: { code: normalizedCode, startDate: startDate.value, endDate: endDate.value },
+          }),
     ])
 
     prices.value = priceRes.prices ?? []
@@ -261,6 +270,7 @@ async function runBacktest() {
 }
 
 async function updateDividends() {
+  if (isGuest.value) return promptLogin()
   if (updatingDividends.value) return
   updatingDividends.value = true
   try {

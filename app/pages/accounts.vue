@@ -1,7 +1,8 @@
 <script setup lang="ts">
 const { authHeaders } = useAuth()
+const { isGuest, promptLogin } = useGuestGate()
 
-const { data: accounts, refresh } = await useAuthFetch<{ id: number; name: string }[]>('/api/accounts')
+const { data: accounts, refresh } = await useAppData<{ id: number; name: string }[]>('/api/accounts', {}, DEMO_ACCOUNTS)
 
 const newName = ref('')
 const adding = ref(false)
@@ -10,6 +11,7 @@ const editingId = ref<number | null>(null)
 const editingName = ref('')
 
 async function addAccount() {
+  if (isGuest.value) return promptLogin()
   if (!newName.value.trim()) return
   adding.value = true
   error.value = ''
@@ -29,6 +31,7 @@ async function addAccount() {
 }
 
 async function deleteAccount(id: number) {
+  if (isGuest.value) return promptLogin()
   if (!confirm('確定刪除此帳戶別名？')) return
   await $fetch(`/api/accounts/${id}`, {
     method: 'DELETE',
@@ -38,6 +41,7 @@ async function deleteAccount(id: number) {
 }
 
 function startEdit(acc: { id: number; name: string }) {
+  if (isGuest.value) return promptLogin()
   editingId.value = acc.id
   editingName.value = acc.name
 }

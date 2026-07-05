@@ -1,5 +1,6 @@
 <script setup lang="ts">
 const { authHeaders } = useAuth()
+const { isGuest, promptLogin } = useGuestGate()
 
 // Tooltip
 const tooltip = ref<{ text: string; x: number; y: number } | null>(null)
@@ -15,8 +16,8 @@ function showTip(e: MouseEvent, text: string) {
   tooltip.value = { text, x, y }
 }
 function hideTip() { tooltip.value = null }
-const { data: snapshots, refresh } = await useAuthFetch<any[]>('/api/portfolio/snapshot')
-const { data: holdings } = await useAuthFetch<any[]>('/api/stockholdings/summary', { key: 'daily-summary' })
+const { data: snapshots, refresh } = await useAppData<any[]>('/api/portfolio/snapshot', {}, DEMO_SNAPSHOTS)
+const { data: holdings } = await useAppData<any>('/api/stockholdings/summary', { key: 'daily-summary' }, DEMO_SUMMARY)
 
 const allRows = computed(() => {
   const raw = [...(snapshots.value ?? [])].reverse() // 由舊到新
@@ -106,6 +107,7 @@ function buildMonthList(): { year: number; month: number; label: string }[] {
 }
 
 async function runHistoryImport() {
+  if (isGuest.value) return promptLogin()
   const months = buildMonthList()
   if (!months.length) { alert('尚無交易記錄'); return }
 

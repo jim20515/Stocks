@@ -1,12 +1,13 @@
 <script setup lang="ts">
 const { authHeaders } = useAuth()
+const { isGuest, promptLogin } = useGuestGate()
 
 const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Taipei' })
 
 // ── 來源資料：持股（股票建議清單）、帳戶管理的帳戶、已存群組 ──
-const { data: holdings } = await useAuthFetch<any[]>('/api/stockholdings/index', { key: 'live-holdings' })
-const { data: accounts } = await useAuthFetch<{ id: number; name: string }[]>('/api/accounts', { key: 'live-accounts' })
-const { data: battles, refresh: refreshBattles } = await useAuthFetch<any[]>('/api/strategy-battles', { key: 'live-battles' })
+const { data: holdings } = await useAppData<any[]>('/api/stockholdings/index', { key: 'live-holdings' }, DEMO_HOLDINGS)
+const { data: accounts } = await useAppData<{ id: number; name: string }[]>('/api/accounts', { key: 'live-accounts' }, DEMO_ACCOUNTS)
+const { data: battles, refresh: refreshBattles } = await useAppData<any[]>('/api/strategy-battles', { key: 'live-battles' }, DEMO_BATTLES)
 
 // 股票建議：持股中出現過的代號（僅作為輸入提示，非限制）
 const heldCodes = computed(() => {
@@ -56,6 +57,7 @@ const loading = ref(false)
 const error = ref('')
 
 async function runResult() {
+  if (isGuest.value) return promptLogin()
   const c = pureCode()
   if (!c) { error.value = '請先輸入股票代號'; result.value = null; return }
   loading.value = true
@@ -86,6 +88,7 @@ const saving = ref(false)
 const showBattlesModal = ref(false)
 
 async function saveBattle() {
+  if (isGuest.value) return promptLogin()
   if (!battleName.value.trim()) { error.value = '請輸入群組名稱'; return }
   if (!pureCode()) { error.value = '請先輸入股票代號'; return }
   saving.value = true
@@ -124,6 +127,7 @@ async function loadBattle(b: any) {
 }
 
 async function deleteBattle(id: number) {
+  if (isGuest.value) return promptLogin()
   if (!confirm('確定刪除此實戰群組？')) return
   try {
     await $fetch(`/api/strategy-battles/${id}`, { method: 'DELETE', headers: authHeaders.value as HeadersInit })

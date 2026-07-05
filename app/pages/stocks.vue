@@ -2,8 +2,9 @@
 const refreshKey = useState('portfolioRefreshKey', () => 0)
 const openEditModal = inject<(h: any) => void>('openEditModal', () => {})
 const { authHeaders } = useAuth()
+const { isGuest, promptLogin } = useGuestGate()
 
-const { data: summary, refresh } = await useAuthFetch('/api/stockholdings/summary', { key: 'stocks-summary' })
+const { data: summary, refresh } = await useAppData('/api/stockholdings/summary', { key: 'stocks-summary' }, DEMO_SUMMARY)
 
 watch(refreshKey, () => refresh())
 
@@ -83,6 +84,7 @@ const confirmDialog = ref<{ title: string; message: string; okText: string; onOk
 const confirmLoading = ref(false)
 
 function askRemove(id: number, name: string) {
+  if (isGuest.value) return promptLogin()
   confirmDialog.value = {
     title: '刪除這筆交易',
     message: `確定刪除「${name}」這筆交易記錄？此操作無法復原。`,
@@ -95,6 +97,7 @@ function askRemove(id: number, name: string) {
 }
 
 function askRemoveAll() {
+  if (isGuest.value) return promptLogin()
   confirmDialog.value = {
     title: '刪除全部交易記錄',
     message: '確定刪除全部交易記錄？所有持股資料都會被清空，此操作無法復原。',

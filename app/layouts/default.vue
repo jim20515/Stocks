@@ -1,6 +1,7 @@
 <script setup lang="ts">
 const route = useRoute()
 const { user, clearSession, authHeaders } = useAuth()
+const { isGuest, promptLogin, showLoginPrompt } = useGuestGate()
 const supabase = useSupabaseClient()
 const { $authFetch } = useNuxtApp()
 const sidebarOpen = ref(false)
@@ -36,6 +37,7 @@ function detectMapping(keys: string[]) {
 }
 
 function triggerImport() {
+  if (isGuest.value) return promptLogin()
   xlsFileInput.value?.click()
 }
 
@@ -248,7 +250,7 @@ async function confirmImport() {
 }
 
 // ── 帳戶別名 ──────────────────────────────────────────────
-const { data: accountList } = await useAuthFetch<{ id: number; name: string }[]>('/api/accounts')
+const { data: accountList } = await useAppData<{ id: number; name: string }[]>('/api/accounts', {}, DEMO_ACCOUNTS)
 
 // ──────────────────────────────────────────────────────────
 const showModal = ref(false)
@@ -263,6 +265,7 @@ const refreshKey = useState('portfolioRefreshKey', () => 0)
 
 provide('refreshKey', refreshKey)
 provide('openEditModal', (holding: any) => {
+  if (isGuest.value) return promptLogin()
   editingId.value = holding.id
   const isSell = holding.shares < 0
   form.value = {
@@ -286,6 +289,7 @@ function today() {
 }
 
 function openModal() {
+  if (isGuest.value) return promptLogin()
   showModal.value = true
 }
 
@@ -371,6 +375,11 @@ async function submitForm() {
     <LayoutSidebar :open="sidebarOpen" @close="sidebarOpen = false" />
     <div class="md:ml-60 flex-1 flex flex-col min-h-screen overflow-x-hidden">
       <LayoutAppHeader @add="openModal" @import="triggerImport" @logout="logout" @menu="sidebarOpen = true" />
+      <!-- 訪客範例橫幅 -->
+      <div v-if="isGuest" class="px-4 md:px-6 py-2.5 bg-indigo-50 border-b border-indigo-100 flex items-center justify-center gap-x-3 gap-y-1 flex-wrap text-center">
+        <span class="text-xs text-indigo-700">📊 你正在看<strong>範例資料</strong>，登入後即可管理自己的投資組合</span>
+        <NuxtLink to="/login" class="text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 px-3 py-1 rounded-lg transition">登入 / 註冊</NuxtLink>
+      </div>
       <main class="flex-1 p-4 md:p-6">
         <slot />
       </main>
@@ -388,6 +397,33 @@ async function submitForm() {
 
     <!-- 隱藏的 XLS 檔案輸入 -->
     <input ref="xlsFileInput" type="file" accept=".xls,.xlsx,.csv" class="hidden" @change="onXlsSelected" />
+
+    <!-- 訪客登入提示視窗 -->
+    <Teleport to="body">
+      <div v-if="showLoginPrompt"
+        class="fixed inset-0 bg-black/40 z-[80] flex items-center justify-center p-4"
+        @click.self="showLoginPrompt = false">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 text-center">
+          <div class="w-11 h-11 mx-auto mb-3 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
+          </div>
+          <h2 class="text-base font-semibold text-slate-800 mb-1">登入後即可使用</h2>
+          <p class="text-sm text-slate-500 mb-5 leading-6">目前為範例預覽模式。登入或註冊後，就能新增交易、匯入對帳單、管理你自己的投資組合。</p>
+          <div class="flex gap-2">
+            <button @click="showLoginPrompt = false"
+              class="flex-1 px-4 py-2 rounded-lg text-sm text-slate-600 border border-slate-200 hover:bg-slate-50 transition">
+              先看看
+            </button>
+            <NuxtLink to="/login" @click="showLoginPrompt = false"
+              class="flex-1 px-4 py-2 rounded-lg text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 transition">
+              登入 / 註冊
+            </NuxtLink>
+          </div>
+        </div>
+      </div>
+    </Teleport>
 
     <!-- AI 偵測中 / 錯誤提示 -->
     <Teleport to="body">

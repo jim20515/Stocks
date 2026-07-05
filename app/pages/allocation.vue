@@ -1,7 +1,8 @@
 <script setup lang="ts">
 const refreshKey = useState('portfolioRefreshKey', () => 0)
 const { authHeaders } = useAuth()
-const { data, refresh } = await useAuthFetch('/api/portfolio/beta-summary', { key: 'beta-summary' })
+const { isGuest, promptLogin } = useGuestGate()
+const { data, refresh } = await useAppData('/api/portfolio/beta-summary', { key: 'beta-summary' }, DEMO_BETA)
 
 watch(refreshKey, () => refresh())
 
@@ -27,6 +28,7 @@ const target0x = computed(() => Math.max(0, 100 - form.value.x1 - form.value.x2)
 const formInvalid = computed(() => form.value.x1 + form.value.x2 > 100)
 
 async function saveTargets() {
+  if (isGuest.value) return promptLogin()
   if (formInvalid.value) return
   saving.value = true
   try {
