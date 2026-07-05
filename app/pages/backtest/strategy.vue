@@ -1,7 +1,7 @@
 <script setup lang="ts">
 const { authHeaders } = useAuth()
 const { isGuest } = useGuestGate()
-const { updating: updatingAllLatest, progress: updateAllProgress, updateAllLatestPrices } = useBacktestUpdate()
+const { updating: updatingAllLatest, progress: updateAllProgress, updateAllLatestPrices, updateOneLatest } = useBacktestUpdate()
 
 const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Taipei' })
 
@@ -132,6 +132,8 @@ const inferTax = computed(() => {
 // ── 回測狀態 ─────────────────────────────────────────────
 const loading = ref(false)
 const error = ref('')
+const progressText = ref('')
+const dataWarnings = ref<string[]>([])
 
 type Trade = {
   date: string
@@ -578,14 +580,39 @@ async function runBacktest() {
   loading.value = true
   error.value = ''
   result.value = null
+  dataWarnings.value = []
 
   try {
+    // 先把該檔股票更新到最新（共用股價表，大家受惠）；會員用 token，訪客走公開端點
+    progressText.value = '正在更新最新股價...'
+    try {
+      if (isGuest.value) {
+        await $fetch('/api/public/update-latest', { method: 'POST', body: { code: selectedCode.value } })
+      } else {
+        await updateOneLatest(selectedCode.value)
+      }
+    } catch { /* 更新失敗不中斷，仍用現有資料回測 */ }
+
+    progressText.value = '讀取回測資料...'
     const data = await $fetch<{ prices: { date: string; close_price: number }[] }>(pricesUrl, {
       headers: authHeaders.value as HeadersInit,
       query: { code: selectedCode.value, startDate: startDate.value, endDate: endDate.value },
     })
     const prices = data.prices ?? []
     if (prices.length < 2) { error.value = '選定期間內資料不足，請調整日期範圍'; return }
+
+    // 資料不足提醒：起始日早於最早資料才提醒；結束日僅在落後 >7 天才提醒（週末/當天不誤跳）
+    const actualStart = prices[0].date
+    const actualEnd = prices[prices.length - 1].date
+    const warns: string[] = []
+    if (actualStart > startDate.value) {
+      warns.push(`起始日 ${startDate.value} 早於此股最早資料 ${actualStart}，實際從 ${actualStart} 起算`)
+    }
+    const endGapDays = Math.round((new Date(endDate.value).getTime() - new Date(actualEnd).getTime()) / 86400000)
+    if (endGapDays > 7) {
+      warns.push(`此股最新資料只到 ${actualEnd}（距結束日 ${endDate.value} 已 ${endGapDays} 天），可能尚未更新到更近期的交易資料`)
+    }
+    dataWarnings.value = warns
 
     if (strategy.value === 'grid') {
       result.value = runGridStrategy(prices)
@@ -598,6 +625,7 @@ async function runBacktest() {
     error.value = e?.data?.message ?? '回測失敗'
   } finally {
     loading.value = false
+    progressText.value = ''
   }
 }
 
@@ -973,7 +1001,16 @@ function goTradePage(p: number) {
           </svg>
           {{ loading ? '計算中…' : '執行回測' }}
         </button>
+        <p v-if="loading && progressText" class="text-sm text-indigo-500">{{ progressText }}</p>
         <p v-if="error" class="text-sm text-red-500">{{ error }}</p>
+      </div>
+      <div v-if="dataWarnings.length" class="mt-3 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 space-y-1">
+        <p v-for="(w, i) in dataWarnings" :key="i" class="text-xs text-amber-700 flex items-start gap-1.5">
+          <svg class="w-3.5 h-3.5 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+          </svg>
+          {{ w }}
+        </p>
       </div>
     </div>
 

@@ -35,3 +35,5 @@ scripts/screenshots/
 
 # 生成的截圖（暫存，不進 git）
 .claude/screenshots/
+.vercel
+.env*
