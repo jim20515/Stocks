@@ -1,27 +1,28 @@
-import { createClient } from '@supabase/supabase-js'
-
+// 註冊前置檢查：確認 email 尚未註冊（已註冊就擋下請對方登入）。
+// 實際的驗證連結改由「前端」用 supabase.signInWithOtp 寄出——這樣 PKCE 的 code verifier
+// 才會存在使用者的瀏覽器，點連結回來時才能完成交換、建立 session（伺服器端寄會導致逾時）。
 export default defineEventHandler(async (event) => {
-  const { email, password } = await readBody(event)
-  if (!email || !password) throw createError({ statusCode: 400, message: '請輸入 Email 和密碼' })
+  const { email } = await readBody(event)
+  if (!email) throw createError({ statusCode: 400, message: '請輸入 Email' })
   const normalizedEmail = String(email).trim().toLowerCase()
-  checkRateLimit(event, `register:${normalizedEmail}`, 3, 60 * 60 * 1000)
+  checkRateLimit(event, `register:${normalizedEmail}`, 5, 60 * 60 * 1000)
 
-  const url = process.env.SUPABASE_URL ?? useRuntimeConfig().supabaseUrl as string
-  const key = process.env.SUPABASE_KEY ?? useRuntimeConfig().supabaseKey as string
-  const client = createClient(url, key)
-
-  const { data, error } = await client.auth.signUp({ email: normalizedEmail, password })
-  if (error) throw createError({ statusCode: 400, message: error.message })
-
-  await logEvent(event, 'auth.register', { email: normalizedEmail }, data.user?.id ?? null)
-
-  if (!data.session) {
-    return { requiresConfirmation: true }
+  // 用 service_role 的 admin API 查有沒有這個 email（本機無 service key 時略過檢查）
+  const admin = useServiceDb()
+  if (admin) {
+    let page = 1
+    while (page < 50) {
+      const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 200 })
+      if (error) break
+      const list = data?.users ?? []
+      if (list.some(u => (u.email ?? '').toLowerCase() === normalizedEmail)) {
+        throw createError({ statusCode: 409, message: '此 Email 已註冊，請直接登入' })
+      }
+      if (list.length < 200) break
+      page++
+    }
   }
 
-  return {
-    accessToken: data.session.access_token,
-    refreshToken: data.session.refresh_token,
-    user: { id: data.user!.id, email: data.user!.email },
-  }
+  await logEvent(event, 'auth.register', { email: normalizedEmail })
+  return { ok: true }
 })

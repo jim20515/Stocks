@@ -7,10 +7,48 @@ if (isLoggedIn.value) await navigateTo('/')
 const { start: startBar } = useLoadingIndicator()
 const supabase = useSupabaseClient()
 
+const tab = ref<'login' | 'register'>('login')
 const email = ref('')
 const password = ref('')
 const loading = ref(false)
 const error = ref('')
+const successMsg = ref('')
+
+// 忘記密碼
+const forgot = ref(false)
+const forgotSent = ref(false)
+
+function switchTab(next: 'login' | 'register') {
+  tab.value = next
+  forgot.value = false
+  error.value = ''
+  successMsg.value = ''
+}
+
+function openForgot() {
+  forgot.value = true
+  forgotSent.value = false
+  error.value = ''
+  successMsg.value = ''
+}
+
+async function sendReset() {
+  if (loading.value) return
+  error.value = ''
+  if (!email.value) { error.value = '請填寫 Email'; return }
+  loading.value = true
+  try {
+    const { error: err } = await supabase.auth.resetPasswordForEmail(email.value, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    })
+    if (err) throw err
+    forgotSent.value = true
+  } catch (e: any) {
+    error.value = e?.message || '寄送失敗，請稍後再試'
+  } finally {
+    loading.value = false
+  }
+}
 
 async function loginWithGoogle() {
   await supabase.auth.signInWithOAuth({
@@ -26,9 +64,27 @@ async function loginWithGoogle() {
 async function submit() {
   if (loading.value) return
   error.value = ''
-  if (!email.value || !password.value) { error.value = '請填寫 Email 和密碼'; return }
+  successMsg.value = ''
+  if (!email.value) { error.value = '請填寫 Email'; return }
+  if (tab.value === 'login' && !password.value) { error.value = '請填寫密碼'; return }
   loading.value = true
   try {
+    // 註冊：先由伺服器確認 email 未註冊（已註冊會丟 409），再「由前端」寄出驗證連結，
+    // 這樣 PKCE 的 code verifier 才會留在本瀏覽器，點連結回來才能完成交換。
+    if (tab.value === 'register') {
+      await $fetch('/api/auth/register', { method: 'POST', body: { email: email.value } })
+      const { error: otpErr } = await supabase.auth.signInWithOtp({
+        email: email.value,
+        options: {
+          shouldCreateUser: true,
+          data: { password_set: false },
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
+        },
+      })
+      if (otpErr) throw otpErr
+      successMsg.value = '註冊連結已寄出！請至信箱點擊連結完成驗證，並設定你的密碼。'
+      return
+    }
     const data = await $fetch<any>('/api/auth/login', {
       method: 'POST',
       body: { email: email.value, password: password.value },
@@ -37,7 +93,13 @@ async function submit() {
     window.location.replace('/')
   } catch (e: any) {
     const msg = e?.data?.message
-    error.value = (typeof msg === 'string' && msg) ? msg : '登入失敗，請再試一次'
+    error.value = (typeof msg === 'string' && msg)
+      ? msg
+      : (tab.value === 'login' ? '登入失敗，請再試一次' : '無法寄出註冊連結，請稍後再試')
+    // 已註冊 → 切回登入分頁，方便直接登入（保留錯誤訊息）
+    if (tab.value === 'register' && (e?.data?.statusCode === 409 || e?.statusCode === 409)) {
+      tab.value = 'login'
+    }
   } finally {
     loading.value = false
   }
@@ -59,16 +121,42 @@ async function submit() {
         <p class="text-sm text-slate-400 mt-1">個人投資組合管理</p>
       </div>
 
-      <form @submit.prevent="submit" class="space-y-4">
+      <!-- 登入 / 註冊 切換 -->
+      <div v-if="!forgot" class="flex gap-1 bg-slate-100 rounded-lg p-1 mb-6">
+        <button type="button" @click="switchTab('login')"
+          class="flex-1 py-1.5 text-sm font-medium rounded-md transition"
+          :class="tab === 'login' ? 'bg-white shadow text-slate-800' : 'text-slate-500'">
+          登入
+        </button>
+        <button type="button" @click="switchTab('register')"
+          class="flex-1 py-1.5 text-sm font-medium rounded-md transition"
+          :class="tab === 'register' ? 'bg-white shadow text-slate-800' : 'text-slate-500'">
+          註冊
+        </button>
+      </div>
+
+      <!-- 登入 / 註冊 表單 -->
+      <form v-if="!forgot" @submit.prevent="submit" class="space-y-4">
         <div>
           <label class="block text-xs font-medium text-slate-600 mb-1.5">Email</label>
           <input v-model="email" type="email" placeholder="your@email.com" autocomplete="email"
             class="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300" />
         </div>
-        <div>
-          <label class="block text-xs font-medium text-slate-600 mb-1.5">密碼</label>
+        <div v-if="tab === 'login'">
+          <div class="flex items-center justify-between mb-1.5">
+            <label class="block text-xs font-medium text-slate-600">密碼</label>
+            <button type="button" @click="openForgot" class="text-xs text-indigo-500 hover:text-indigo-600">忘記密碼？</button>
+          </div>
           <input v-model="password" type="password" placeholder="••••••••" autocomplete="current-password"
             class="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+        </div>
+
+        <p v-if="tab === 'register'" class="text-xs text-slate-400 leading-relaxed">
+          我們會寄一封驗證信到你的信箱，點擊信中連結即可完成註冊，並在第一次進入時設定密碼。
+        </p>
+
+        <div v-if="successMsg" class="text-xs text-green-600 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+          {{ successMsg }}
         </div>
 
         <div v-if="error" class="text-xs text-red-500 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
@@ -77,11 +165,39 @@ async function submit() {
 
         <button type="submit" :disabled="loading"
           class="w-full py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition">
-          {{ loading ? '處理中…' : '登入' }}
+          {{ loading ? '處理中…' : tab === 'login' ? '登入' : '寄送註冊連結' }}
         </button>
       </form>
 
-      <div class="mt-4">
+      <!-- 忘記密碼 -->
+      <div v-else class="space-y-4">
+        <p class="text-xs text-slate-400 leading-relaxed">
+          輸入註冊時的 Email，我們會寄一封重設密碼的連結給你。
+        </p>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1.5">Email</label>
+          <input v-model="email" type="email" placeholder="your@email.com" autocomplete="email"
+            class="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+        </div>
+
+        <div v-if="forgotSent" class="text-xs text-green-600 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+          若此 Email 有註冊，重設密碼的連結已寄出，請至信箱查收（含垃圾信匣）。
+        </div>
+        <div v-if="error" class="text-xs text-red-500 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+          {{ error }}
+        </div>
+
+        <button type="button" @click="sendReset" :disabled="loading"
+          class="w-full py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition">
+          {{ loading ? '寄送中…' : '寄送重設連結' }}
+        </button>
+        <button type="button" @click="switchTab('login')"
+          class="w-full py-2 text-sm font-medium text-slate-500 hover:text-indigo-600 transition">
+          返回登入
+        </button>
+      </div>
+
+      <div v-if="!forgot" class="mt-4">
         <button type="button" @click="loginWithGoogle"
           class="w-full flex items-center justify-center gap-2.5 py-2.5 border border-slate-200 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 transition">
           <svg class="w-4 h-4" viewBox="0 0 24 24">

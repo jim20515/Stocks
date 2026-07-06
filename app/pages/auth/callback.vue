@@ -10,11 +10,14 @@ const supabaseSession = useSupabaseSession()
 // plugin 會自動交換 code 並更新 supabaseSession
 watch(supabaseSession, (session) => {
   if (session?.user) {
+    // 無密碼註冊建立的帳號會帶 password_set:false，導去第一次設定密碼；其餘（Google 等）直接進系統
+    const needsPassword = (session.user.user_metadata as any)?.password_set === false
     setSession(session.access_token, {
       id: session.user.id,
       email: session.user.email ?? '',
+      needsPassword,
     })
-    window.location.replace('/')
+    window.location.replace(needsPassword ? '/set-password' : '/')
   }
 }, { immediate: true })
 

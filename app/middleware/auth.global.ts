@@ -21,11 +21,17 @@ function isTokenExpired(token: string): boolean {
 }
 
 export default defineNuxtRouteMiddleware((to) => {
-  if (to.path === '/login' || to.path === '/auth/callback') return
-  const { token, clearSession } = useAuth()
+  if (to.path === '/auth/callback' || to.path === '/reset-password') return
+  const { token, user, clearSession } = useAuth()
   // 訪客（無 token 或 token 過期）不再強制導向登入，改為以 guest 身分瀏覽（看範例 Demo / 工具）。
   // 過期的 token 仍清掉，避免帶壞掉的憑證去打 API。
   if (token.value && isTokenExpired(token.value)) {
     clearSession()
+    return
   }
+  // 無密碼註冊者第一次進來一定要先設定密碼，設好前不放行到其他頁（含登入頁）。
+  if (token.value && user.value?.needsPassword && to.path !== '/set-password') {
+    return navigateTo('/set-password')
+  }
+  if (to.path === '/login') return
 })

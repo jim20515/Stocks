@@ -9,7 +9,7 @@ export function useAuth() {
     secure: secureCookie,
     path: '/',
   })
-  const user = useCookie<{ id: string; email: string } | null>('sb_user', {
+  const user = useCookie<{ id: string; email: string; needsPassword?: boolean } | null>('sb_user', {
     maxAge: 60 * 60 * 24 * 7,
     sameSite: 'lax',
     secure: secureCookie,
@@ -32,7 +32,7 @@ export function useAuth() {
 
   const isLoggedIn = computed(() => !!token.value)
 
-  function setSession(accessToken: string, userData: { id: string; email: string }) {
+  function setSession(accessToken: string, userData: { id: string; email: string; needsPassword?: boolean }) {
     token.value = accessToken
     user.value = userData
 
