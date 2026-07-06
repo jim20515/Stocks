@@ -12,7 +12,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const client = useServiceDb()
-  if (!client) throw createError({ statusCode: 500, message: 'SUPABASE_SERVICE_KEY 未設定' })
+  if (!client) throw createError({ statusCode: 500, message: 'NUXT_SUPABASE_SECRET_KEY 未設定' })
 
   if (makeAdmin) {
     const { error } = await client.from('app_admins').upsert({ user_id: userId }, { onConflict: 'user_id' })

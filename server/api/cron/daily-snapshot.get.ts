@@ -12,8 +12,8 @@ export default defineEventHandler(async (event) => {
   }
 
   // 用 service role key 取得所有用戶清單
-  const serviceKey = process.env.SUPABASE_SERVICE_KEY
-  if (!serviceKey) throw createError({ statusCode: 500, message: 'SUPABASE_SERVICE_KEY not set' })
+  const serviceKey = process.env.NUXT_SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_KEY
+  if (!serviceKey) throw createError({ statusCode: 500, message: 'NUXT_SUPABASE_SECRET_KEY not set' })
 
   const supabaseUrl = process.env.SUPABASE_URL!
   const { createClient } = await import('@supabase/supabase-js')
@@ -71,6 +71,7 @@ export default defineEventHandler(async (event) => {
 
       let totalValue = 0
       let totalPrevValue = 0
+      let totalCost = 0
       for (const code of codes) {
         const netShares = netSharesMap[code]
         const info = priceInfos[code]
@@ -80,11 +81,13 @@ export default defineEventHandler(async (event) => {
         const prevClose = info?.prevClose ?? price
         totalValue += price * netShares
         totalPrevValue += prevClose * netShares
+        totalCost += wacc * netShares
       }
 
       if (codes.length === 0) continue  // 當日無持股，略過
 
       totalValue = Math.round(totalValue)  // 不含現金，純股票市值
+      totalCost = Math.round(totalCost)
 
       const todayTrades = (holdings ?? []).filter((h: any) => h.buy_date === today)
       const dailyTradeAmount = Math.round(todayTrades.reduce((s: number, h: any) => s + h.shares * Number(h.average_cost), 0))
@@ -103,6 +106,7 @@ export default defineEventHandler(async (event) => {
         user_id: userId,
         date: today,
         total_value: totalValue,
+        total_cost: totalCost,
         daily_change: pureDailyChange,
         daily_change_pct: dailyChangePct,
         daily_trade_amount: dailyTradeAmount,

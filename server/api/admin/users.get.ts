@@ -5,8 +5,8 @@ export default defineEventHandler(async (event) => {
   await requireAdmin(event)
 
   const url = process.env.SUPABASE_URL ?? useRuntimeConfig().supabaseUrl as string
-  const serviceKey = process.env.SUPABASE_SERVICE_KEY ?? (useRuntimeConfig() as any).supabaseServiceKey
-  if (!serviceKey) throw createError({ statusCode: 500, message: 'SUPABASE_SERVICE_KEY 未設定' })
+  const serviceKey = process.env.NUXT_SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_KEY ?? (useRuntimeConfig() as any).supabaseServiceKey
+  if (!serviceKey) throw createError({ statusCode: 500, message: 'NUXT_SUPABASE_SECRET_KEY 未設定' })
   const admin = createClient(url as string, serviceKey as string, { auth: { persistSession: false } })
 
   // 取全部使用者（分頁）

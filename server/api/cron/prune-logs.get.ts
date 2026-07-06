@@ -6,7 +6,7 @@ export default defineEventHandler(async (event) => {
   if (authHeader !== `Bearer ${cronSecret}`) throw createError({ statusCode: 401, message: 'Unauthorized' })
 
   const client = useServiceDb()
-  if (!client) throw createError({ statusCode: 500, message: 'SUPABASE_SERVICE_KEY not set' })
+  if (!client) throw createError({ statusCode: 500, message: 'NUXT_SUPABASE_SECRET_KEY not set' })
 
   const cutoff = new Date(Date.now() - 90 * 86400000).toISOString()
   const { error } = await client.from('activity_log').delete().lt('created_at', cutoff)

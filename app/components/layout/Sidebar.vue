@@ -6,10 +6,12 @@ const isActive = (path: string) => route.path === path
 const isGroupActive = (paths: string[]) => paths.some(path => route.path === path || route.path.startsWith(`${path}/`))
 const expandedGroups = ref<Record<string, boolean>>({
   backtest: route.path.startsWith('/backtest'),
+  usermgmt: route.path.startsWith('/admin'),
 })
 
 watch(() => route.path, (path) => {
   if (path.startsWith('/backtest')) expandedGroups.value.backtest = true
+  if (path.startsWith('/admin')) expandedGroups.value.usermgmt = true
 })
 
 const props = defineProps<{ open?: boolean }>()
@@ -75,10 +77,14 @@ const navItems = [
     icon: icon('M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z'),
   },
   {
-    path: '/admin',
-    label: '帳號管理',
+    key: 'usermgmt',
+    label: '使用者管理',
     adminOnly: true,
     icon: icon('M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z'),
+    children: [
+      { path: '/admin', label: '帳號管理' },
+      { path: '/admin/user-info', label: '使用者資訊' },
+    ],
   },
 ]
 

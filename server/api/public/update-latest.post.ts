@@ -1,5 +1,5 @@
 // 訪客也能觸發「更新共用股價到最新」。實際寫入由 server 用 service_role 金鑰控管
-// （訪客只能觸發、無法直接寫資料庫）。未設定 SUPABASE_SERVICE_KEY 時回 no-service-key，前端優雅退回。
+// （訪客只能觸發、無法直接寫資料庫）。未設定 NUXT_SUPABASE_SECRET_KEY 時回 no-service-key，前端優雅退回。
 export default defineEventHandler(async (event) => {
   const body = await readBody(event).catch(() => ({}))
   const code = normalizeStockCode(body?.code ?? getQuery(event).code)
