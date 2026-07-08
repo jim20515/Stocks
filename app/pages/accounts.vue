@@ -9,6 +9,57 @@ const adding = ref(false)
 const error = ref('')
 const editingId = ref<number | null>(null)
 const editingName = ref('')
+// ── 拖曳排序 ──
+const dragIndex = ref<number | null>(null)   // 拖曳來源 index
+const overIndex = ref<number | null>(null)   // 目前經過的目標 index
+const handleGrabbed = ref(false)             // 只允許從漢堡把手發起拖曳
+
+function onDragStart(index: number, e: DragEvent) {
+  if (!handleGrabbed.value) { e.preventDefault(); return }  // 非從把手 → 取消拖曳
+  dragIndex.value = index
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', String(index))     // Firefox 需要才會啟動拖曳
+  }
+}
+function onDragOver(index: number, e: DragEvent) {
+  e.preventDefault()
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
+  overIndex.value = index
+}
+function onDrop(index: number) {
+  const from = dragIndex.value
+  resetDrag()
+  if (from === null || from === index) return
+  reorderAndSave(from, index)
+}
+function resetDrag() {
+  dragIndex.value = null
+  overIndex.value = null
+  handleGrabbed.value = false
+}
+
+// 把第 from 個帳戶移到第 to 個位置（插入語意），並立即儲存新順序。
+// 此順序會套用到全系統的帳戶下拉選單。
+async function reorderAndSave(from: number, to: number) {
+  if (isGuest.value) return promptLogin()
+  const list = [...(accounts.value ?? [])]
+  const [moved] = list.splice(from, 1)
+  list.splice(to, 0, moved)
+  accounts.value = list          // 樂觀更新，畫面立即換位
+  error.value = ''
+  try {
+    await $fetch('/api/accounts/reorder', {
+      method: 'POST',
+      headers: authHeaders.value as HeadersInit,
+      body: { ids: list.map(a => a.id) },
+    })
+    await refresh()
+  } catch (e: any) {
+    error.value = e?.data?.message ?? '排序儲存失敗'
+    await refresh()               // 失敗則還原成伺服器順序
+  }
+}
 
 async function addAccount() {
   if (isGuest.value) return promptLogin()
@@ -66,7 +117,7 @@ async function saveEdit(id: number) {
 <template>
   <div class="p-6 max-w-lg">
     <h1 class="text-lg font-semibold text-slate-800 mb-1">帳戶管理</h1>
-    <p class="text-xs text-slate-400 mb-6">新增帳戶別名，新增交易時可從下拉選單選擇</p>
+    <p class="text-xs text-slate-400 mb-6">新增帳戶別名，並拖曳左側把手調整順序；此順序會套用到全系統的帳戶下拉選單</p>
 
     <!-- 新增 -->
     <div class="flex gap-2 mb-6">
@@ -90,9 +141,20 @@ async function saveEdit(id: number) {
     <!-- 清單 -->
     <div v-if="accounts?.length" class="space-y-2">
       <div
-        v-for="acc in accounts"
+        v-for="(acc, index) in accounts"
         :key="acc.id"
-        class="flex items-center gap-2 px-4 py-3 bg-white border border-slate-200 rounded-lg"
+        :draggable="editingId !== acc.id"
+        @dragstart="onDragStart(index, $event)"
+        @dragover="onDragOver(index, $event)"
+        @drop="onDrop(index)"
+        @dragend="resetDrag"
+        class="flex items-center gap-2 px-4 py-3 bg-white border rounded-lg transition"
+        :class="[
+          dragIndex === index ? 'opacity-40' : '',
+          overIndex === index && dragIndex !== null && dragIndex !== index
+            ? 'border-indigo-400 bg-indigo-50/50'
+            : 'border-slate-200',
+        ]"
       >
         <!-- 編輯中 -->
         <template v-if="editingId === acc.id">
@@ -108,6 +170,16 @@ async function saveEdit(id: number) {
         </template>
         <!-- 一般狀態 -->
         <template v-else>
+          <!-- 拖曳把手（漢堡三條線） -->
+          <span
+            @mousedown="handleGrabbed = true"
+            class="shrink-0 -ml-1 px-1 text-slate-300 hover:text-indigo-500 cursor-grab active:cursor-grabbing select-none transition"
+            title="拖曳調整順序"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </span>
           <span class="flex-1 text-sm text-slate-700">{{ acc.name }}</span>
           <button @click="startEdit(acc)" class="text-slate-300 hover:text-indigo-400 transition" title="編輯">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
