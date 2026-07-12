@@ -12,6 +12,14 @@ export default defineEventHandler(async (event) => {
 
   if (!holdings?.length) return { success: true, pricesInserted: 0, snapshotsInserted: 0, tradingDays: 0 }
 
+  // 清除「第一筆交易日之前」的殘留快照：那時尚未有任何部位，這種列一定是舊版匯入留下的幽靈資料。
+  // 若不清掉，它會被當成第一個交易日的「昨日」，導致隔日「當日漲跌」錯誤地扣掉不存在的前一日市值。
+  const firstBuyDate = holdings[0].buy_date
+  if (firstBuyDate) {
+    await client.from('portfolio_daily_snapshot')
+      .delete().eq('user_id', userId).lt('date', firstBuyDate)
+  }
+
   const mm = String(month).padStart(2, '0')
   const monthStart = `${year}-${mm}-01`
   const lastDay = new Date(year, month, 0).getDate()
