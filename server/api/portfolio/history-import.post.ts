@@ -166,7 +166,21 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  const tradingDays = Object.keys(dayMap).sort()
+  // 重算範圍 = 本月「有抓到價的交易日」∪「本月已存在的快照日期」。
+  // 後者確保：非交易日或當天價格延遲未入庫的日子（如 2026-07-10 全市場無資料），
+  // 只要已有舊快照，也會用前一交易日的價格（carry-forward）與最新持股重算 total_cost／市值，
+  // 不會留下舊快照的殘值（先前 total_cost 被停在改動持股前的數字，導致該日成本突兀跳動）。
+  const { data: existingSnapDates } = await client
+    .from('portfolio_daily_snapshot')
+    .select('date')
+    .eq('user_id', userId)
+    .gte('date', monthStart)
+    .lte('date', monthEnd)
+  const dateSet = new Set<string>([
+    ...Object.keys(dayMap),
+    ...((existingSnapDates ?? []).map((r: any) => r.date)),
+  ])
+  const tradingDays = [...dateSet].sort()
 
   if (!tradingDays.length) {
     return { success: true, pricesInserted, snapshotsInserted: 0, tradingDays: 0, debug: debugLog }
