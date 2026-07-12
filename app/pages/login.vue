@@ -11,6 +11,7 @@ const tab = ref<'login' | 'register'>('login')
 const email = ref('')
 const password = ref('')
 const loading = ref(false)
+const redirecting = ref(false)
 const error = ref('')
 const successMsg = ref('')
 
@@ -51,7 +52,8 @@ async function sendReset() {
 }
 
 async function loginWithGoogle() {
-  await supabase.auth.signInWithOAuth({
+  redirecting.value = true
+  const { error: oauthErr } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
       redirectTo: `${window.location.origin}/auth/callback`,
@@ -59,6 +61,8 @@ async function loginWithGoogle() {
       queryParams: { prompt: 'select_account' },
     },
   })
+  // 正常會直接跳轉到 Google；若這裡就出錯，收掉過場並顯示錯誤
+  if (oauthErr) { redirecting.value = false; error.value = oauthErr.message }
 }
 
 async function submit() {
@@ -90,6 +94,9 @@ async function submit() {
       body: { email: email.value, password: password.value },
     })
     setSession(data.accessToken, data.user)
+    // 登入成功後導向儀表板，這段全頁重載會花幾秒，先蓋上「登入中…」畫面，
+    // 避免按鈕恢復可按、看起來像沒反應
+    redirecting.value = true
     window.location.replace('/')
   } catch (e: any) {
     const msg = e?.data?.message
@@ -101,13 +108,18 @@ async function submit() {
       tab.value = 'login'
     }
   } finally {
-    loading.value = false
+    // 導向中不要恢復按鈕，讓「登入中…」畫面撐到頁面換掉為止
+    if (!redirecting.value) loading.value = false
   }
 }
 </script>
 
 <template>
   <LoadingBar />
+
+  <!-- 登入成功/導向 Google 時的過場（避免看起來沒反應）-->
+  <LoadingOverlay v-if="redirecting" />
+
   <div class="min-h-screen bg-slate-50 flex items-center justify-center p-4">
     <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-8">
       <div class="text-center mb-8">

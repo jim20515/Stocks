@@ -33,17 +33,16 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="min-h-screen flex items-center justify-center bg-slate-50">
+  <!-- 交換 session 中：與登入頁一致的「登入中…」過場 -->
+  <LoadingOverlay v-if="loading" />
+  <div v-else class="min-h-screen flex items-center justify-center bg-slate-50">
     <div class="bg-white rounded-2xl border border-slate-200 shadow-sm w-full max-w-sm p-6 text-center">
-      <p v-if="loading" class="text-slate-400 text-sm">登入中…</p>
-      <template v-else>
-        <p class="text-sm font-semibold text-slate-800">第三方登入失敗</p>
-        <p class="mt-2 text-xs text-red-500 break-words">{{ errorMessage }}</p>
-        <NuxtLink to="/login"
-          class="mt-5 inline-flex items-center justify-center px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition">
-          回登入頁
-        </NuxtLink>
-      </template>
+      <p class="text-sm font-semibold text-slate-800">第三方登入失敗</p>
+      <p class="mt-2 text-xs text-red-500 break-words">{{ errorMessage }}</p>
+      <NuxtLink to="/login"
+        class="mt-5 inline-flex items-center justify-center px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition">
+        回登入頁
+      </NuxtLink>
     </div>
   </div>
 </template>
