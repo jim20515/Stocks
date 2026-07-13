@@ -33,7 +33,7 @@ async function submit() {
     if (upErr) throw upErr
     const { data } = await supabase.auth.getSession()
     const s = data.session
-    if (s?.user) setSession(s.access_token, { id: s.user.id, email: s.user.email ?? '' })
+    if (s?.user) setSession(s.access_token, { id: s.user.id, email: s.user.email ?? '' }, s.refresh_token)
     window.location.replace('/')
   } catch (e: any) {
     error.value = e?.message || '重設密碼失敗，請再試一次'

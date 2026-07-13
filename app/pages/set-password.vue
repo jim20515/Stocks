@@ -27,7 +27,7 @@ async function submit() {
     // 清掉 needsPassword 旗標，之後才不會再被導回這頁
     const { data } = await supabase.auth.getSession()
     const accessToken = data.session?.access_token ?? token.value ?? ''
-    setSession(accessToken, { id: user.value!.id, email: user.value!.email })
+    setSession(accessToken, { id: user.value!.id, email: user.value!.email }, data.session?.refresh_token)
     window.location.replace('/')
   } catch (e: any) {
     error.value = e?.message || '設定密碼失敗，請再試一次'

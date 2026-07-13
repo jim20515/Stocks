@@ -93,7 +93,7 @@ async function submit() {
       method: 'POST',
       body: { email: email.value, password: password.value },
     })
-    setSession(data.accessToken, data.user)
+    setSession(data.accessToken, data.user, data.refreshToken)
     // 登入成功後導向儀表板，這段全頁重載會花幾秒，先蓋上「登入中…」畫面，
     // 避免按鈕恢復可按、看起來像沒反應
     redirecting.value = true

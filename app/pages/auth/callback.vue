@@ -16,7 +16,7 @@ watch(supabaseSession, (session) => {
       id: session.user.id,
       email: session.user.email ?? '',
       needsPassword,
-    })
+    }, session.refresh_token)
     window.location.replace(needsPassword ? '/set-password' : '/')
   }
 }, { immediate: true })
