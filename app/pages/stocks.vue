@@ -60,7 +60,13 @@ const sortedItems = computed(() => {
     const bv = b[sortKey.value]
     if (av == null) return 1
     if (bv == null) return -1
-    const cmp = typeof av === 'string' ? av.localeCompare(bv, 'zh-TW') : av - bv
+    let cmp = typeof av === 'string' ? av.localeCompare(bv, 'zh-TW') : av - bv
+    // 交易日相同時，再依 createdAt（系統輸入時間）當次要排序，方向與主排序一致
+    if (cmp === 0 && sortKey.value === 'buyDate') {
+      const at = String(a.createdAt ?? '')
+      const bt = String(b.createdAt ?? '')
+      cmp = at < bt ? -1 : at > bt ? 1 : 0
+    }
     return sortDir.value === 'asc' ? cmp : -cmp
   })
 })

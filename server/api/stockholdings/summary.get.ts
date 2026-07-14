@@ -98,6 +98,7 @@ export default defineEventHandler(async (event) => {
       shares: h.shares,
       averageCost: Number(h.average_cost),
       buyDate: h.buy_date,
+      createdAt: h.created_at,
       account: h.account ?? null,
       leverageMultiplier: Number(h.leverage_multiplier),
       watermarkPrice: h.watermark_price ? Number(h.watermark_price) : null,
