@@ -12,6 +12,7 @@ const d = computed(() => data.value as any)
 const form = ref({ x1: 70, x2: 20, cash: '' })
 const saving = ref(false)
 const msg = ref('')
+const errMsg = ref('')
 
 // 從 API 載入目標值與現金
 watch(d, (val) => {
@@ -31,6 +32,8 @@ async function saveTargets() {
   if (isGuest.value) return promptLogin()
   if (formInvalid.value) return
   saving.value = true
+  msg.value = ''
+  errMsg.value = ''
   try {
     const settings = await $fetch<any>('/api/portfolio/settings', { headers: authHeaders.value as HeadersInit })
     await $fetch('/api/portfolio/settings', {
@@ -41,6 +44,9 @@ async function saveTargets() {
     await refresh()
     msg.value = '已儲存'
     setTimeout(() => msg.value = '', 2000)
+  } catch (e: any) {
+    // 不要靜默吞掉：把儲存失敗原因顯示出來（例如缺欄位、權限）
+    errMsg.value = e?.data?.message || e?.message || '儲存失敗，請稍後再試'
   } finally {
     saving.value = false
   }
@@ -208,6 +214,7 @@ function goPage(p: number) {
             {{ saving ? '儲存中…' : '套用' }}
           </button>
           <span v-if="formInvalid" class="text-xs text-red-500">1x + 2x 不可超過 100%</span>
+          <span v-else-if="errMsg" class="text-sm text-red-500 font-medium">✗ {{ errMsg }}</span>
           <span v-else-if="msg" class="text-sm text-green-600 font-medium">✓ {{ msg }}</span>
         </div>
       </div>
