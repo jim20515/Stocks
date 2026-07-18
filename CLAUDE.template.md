@@ -11,7 +11,8 @@
 - **色彩語意覆寫**：預設 success/正向＝`green`、danger/破壞性＝`red`。<若領域有特殊語意（例：台股「紅漲綠跌」要對調），在此明確定義；否則刪掉這句>
 - **特殊資料格式**：<例：金額千分位、日期 `YYYY-MM-DD`、民國轉西元…沒有就寫「無」>
 - **主要導覽項目**：<列出 Sidebar / BottomNav 要放的入口，例：總覽 / 訂單 / 使用者 / 設定>
-- **認證 / 資料來源**：<例：Supabase Auth（JWT）+ Postgres；或其他>
+- **資料庫**：**Neon（Vercel 內建 serverless Postgres）**。連線字串由 Vercel Neon 整合注入（`DATABASE_URL`）。<若這個專案不同再改>
+- **認證**：自建 JWT（Neon 只是 DB、不含 Auth）——`users` 表 + 密碼雜湊 + `jose` 簽/驗 token。<若改用第三方 Auth 再改>
 
 ---
 
@@ -19,7 +20,8 @@
 
 - **Nuxt 4 + Vue 3**（`<script setup lang="ts">`，TypeScript strict）+ **Tailwind**。
 - **不引入任何 UI library**（無 shadcn / MUI / Element / Vant），一律用 Tailwind primitive 手刻。
-- 後端：Nitro server routes（`server/api/`）+ Supabase（Postgres + Auth）。＊資料來源不同時，改「專案專屬設定」。
+- 後端：Nitro server routes（`server/api/`）+ **Neon（Vercel 內建 serverless Postgres）**。DB 驅動用 `@neondatabase/serverless`，連線字串走 Vercel Neon 整合注入的 `DATABASE_URL`（別硬寫、別 commit）。＊資料來源不同時，改「專案專屬設定」。
+- 部署平台預設 **Vercel**（Nitro preset 自動偵測）；環境變數（`DATABASE_URL`、`NUXT_JWT_SECRET` 等）在 Vercel 專案設定，本機用 `.env`（已進 `.gitignore`）。
 - 元件放 `app/components/`、可複用邏輯放 `app/composables/`（`useXxx`）、頁面放 `app/pages/`（自動路由）、跨頁外殼放 `app/layouts/`。
 
 ## 語言與樣式（設計系統）
@@ -54,8 +56,9 @@
 
 - 讀資料用 `useAuthFetch('/api/...')`（自動帶 Bearer token、401 自動導回登入）。
 - 寫資料（POST/PUT/DELETE）用全域 `$authFetch`，完成後呼叫對應的 `refresh()`，成功用 `toast.success(...)` 提示。
-- 認證：JWT + `useAuth` composable。伺服器端驗 token 注意 **base64url**（ES256 token 含 `-` `_`，不能直接 `atob`）。
-- 資料以認證系統的 **user id** 為 key，不要用 email。
+- **DB 查詢（Neon Postgres）**：server route 內用 `@neondatabase/serverless` 的 `sql` 標籤模板（`const sql = neon(process.env.DATABASE_URL!)`），一律**參數化**（`sql\`... where id = ${id}\``），**絕不字串拼接** SQL。連線與查詢集中在 `server/utils/db.ts`；schema 複雜時可搭 Drizzle ORM。
+- **認證是自管的**（Neon 不含 Auth）：登入 API 比對 `users` 表（密碼用 argon2/bcrypt 雜湊，別存明文），自行用 `jose` 簽發 JWT（HS256 + `NUXT_JWT_SECRET`）；`useAuth` 存 token cookie，`server/utils/requireUser` 用同一把 secret 驗 JWT。解 JWT 段落注意 **base64url**（含 `-` `_`，不能直接 `atob`）。
+- 資料以 **user id**（JWT `sub` = `users` 表主鍵）為 key，不要用 email。
 - **部分更新要先讀舊值再合併**（PUT 只帶部分欄位時，用 `body.x ?? existing.x ?? default`，避免沒帶到的欄位被預設值覆蓋清空）。
 
 ## 工作方式
@@ -73,4 +76,5 @@
 - `app/layouts/default.vue`（外殼：sidebar + header + 底部導覽 + Toast host + 下拉刷新指示器）。
 - `app/components/BottomSheet.vue`、`app/components/Toast.vue`、`app/composables/useToast.ts`、`app/composables/usePullToRefresh.ts`。
 - `app/components/layout/{Sidebar,AppHeader,BottomNav}.vue`（導覽項目改成該專案的）。
-- 認證：`app/composables/useAuth.ts` + `server/utils/requireUser`（或等價）。
+- **DB**：`server/utils/db.ts`（Neon 連線：`@neondatabase/serverless`）+ `users` 表 schema / migration。
+- **認證**：`app/composables/useAuth.ts`（token cookie）+ `server/utils/requireUser`（`jose` 驗 JWT）+ 登入/註冊 API（比對 Neon `users` 表、簽發 JWT）。
