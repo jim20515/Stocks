@@ -27,6 +27,7 @@
     "fsevents@2.3.3": true
   },
   "devDependencies": {
+    "@vite-pwa/nuxt": "^1.1.1",
     "playwright": "^1.61.0"
   }
 }
