@@ -406,7 +406,12 @@ async function submitForm() {
           加入 LINE 社群
         </a>
       </footer>
+      <!-- 底部導覽列預留空間（手機） -->
+      <div class="h-14 safe-bottom sm:hidden" aria-hidden="true" />
     </div>
+
+    <!-- 手機底部導覽列 -->
+    <LayoutBottomNav @menu="sidebarOpen = true" />
 
     <!-- 隱藏的 XLS 檔案輸入 -->
     <input ref="xlsFileInput" type="file" accept=".xls,.xlsx,.csv" class="hidden" @change="onXlsSelected" />
