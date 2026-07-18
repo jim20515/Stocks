@@ -16,6 +16,16 @@
 - 中性色用 `slate` 系；圓角：卡片/視窗 `rounded-2xl`、按鈕/輸入框 `rounded-lg`、badge `rounded-full`。
 - **金額欄位一律千分位**（focus 顯示純數字、blur `toLocaleString('zh-TW')`；不用 `type="number"`）。
 
+## 響應式（RWD / 手機）— 每個功能都要一起做
+
+- **每次開發都同時考慮手機**：純 Tailwind 斷點（`sm:`/`md:`/`lg:`），單一程式碼庫；不做雙版本、不偵測裝置、不引入行動元件庫（如 Vant/Varlet）。桌機外觀用 `sm:` 以上維持不變。
+- **外殼已響應式**：sidebar 手機為抽屜 + 漢堡、`md:ml-60`、`p-4 md:p-6`，沿用即可。
+- **每個 `<table>` 都必須有手機卡片版（含彈窗內的表格，唯一例外：純 2 欄 label｜value 窄表）**：桌機表格一律 `<div class="hidden sm:block overflow-x-auto"><table>…`；手機另做 `sm:hidden` 堆疊卡片列表（用同一份 computed 資料與格式 helper，別重算），分頁放在捲動容器外以保持可見。
+  - **`overflow-x-auto` 只是桌機保險，不是手機解法**——手機出現左右捲動＝漏做卡片。**新增/改動任何表格後，逐一確認每個 `<table>` 都有對應的 `sm:hidden` 卡片**（可比對 `<table>` 數 vs `hidden sm:block`／`sm:hidden` 數）。
+- **彈窗手機用底部 sheet**：`items-end sm:items-center`、`rounded-t-2xl sm:rounded-2xl`、`max-h-[90vh] overflow-y-auto`（矮螢幕要能捲到送出鈕）。
+- **觸控友善**：不要只靠 hover（tooltip 要可點擊、數秒自動收）或拖曳（要有 ▲▼ 等替代）；點擊區夠大。
+- **PWA**（`@vite-pwa/nuxt`）：SW 只快取靜態資源、`/api` 一律 `NetworkOnly`；動到認證/資料流時別破壞這點。圖示在 `public/icons/`。
+
 ## 資料存取
 
 - 讀資料用 `useAuthFetch('/api/...')`（自動帶 Bearer token、401 自動導回登入）。

@@ -1217,6 +1217,7 @@ function goTradePage(p: number) {
         </div>
         <!-- Table -->
         <div class="overflow-y-auto flex-1">
+          <div class="hidden sm:block">
           <table class="w-full text-sm">
             <thead class="sticky top-0 bg-slate-50 z-10">
               <tr class="border-b border-slate-100">
@@ -1240,6 +1241,20 @@ function goTradePage(p: number) {
               </tr>
             </tbody>
           </table>
+          </div>
+          <!-- 手機卡片 -->
+          <div class="sm:hidden divide-y divide-slate-100">
+            <div v-for="(p, i) in modalSortedPairs" :key="i" class="px-5 py-3">
+              <div class="flex items-center justify-between gap-2 mb-1.5">
+                <span class="text-xs text-slate-400">{{ p.buyDate }} → {{ p.sellDate }}</span>
+                <span class="font-medium" :class="pctClass(p.profit)">{{ p.profit >= 0 ? '+' : '' }}{{ money(p.profit) }}</span>
+              </div>
+              <div class="flex items-center gap-4 text-xs">
+                <span class="text-slate-400">買 <span class="font-mono text-indigo-600">{{ p.buyPrice.toLocaleString('zh-TW') }}</span></span>
+                <span class="text-slate-400">賣 <span class="font-mono text-red-500">{{ p.sellPrice.toLocaleString('zh-TW') }}</span></span>
+              </div>
+            </div>
+          </div>
           <div v-if="modalSortedPairs.length === 0" class="py-10 text-center text-sm text-slate-400">尚無已完成的買賣配對</div>
         </div>
         <!-- Footer 小計 -->

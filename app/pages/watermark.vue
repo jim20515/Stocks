@@ -161,7 +161,7 @@ if (selected.value) await loadWatermark()
           </h3>
           <p class="text-xs text-slate-400 mt-0.5">以 ATH {{ result.watermarkPrice.toLocaleString() }} 為基準計算</p>
         </div>
-        <div class="overflow-x-auto">
+        <div class="hidden sm:block overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
             <tr class="bg-slate-50 border-b border-slate-100">
@@ -192,6 +192,22 @@ if (selected.value) await loadWatermark()
             </tr>
           </tbody>
         </table>
+        </div>
+        <!-- 手機卡片 -->
+        <div class="sm:hidden divide-y divide-slate-100">
+          <div v-for="lv in result.levels" :key="lv.pct" class="p-4 flex items-center justify-between gap-3">
+            <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-indigo-50 text-indigo-700">±{{ lv.pct }}%</span>
+            <div class="flex items-center gap-5">
+              <div class="text-right">
+                <div class="text-green-600 font-bold text-lg leading-none">{{ lv.down?.toLocaleString() }}</div>
+                <div class="text-[11px] text-slate-400 mt-0.5">下跌 -{{ lv.pct }}%</div>
+              </div>
+              <div class="text-right">
+                <div class="text-red-500 font-bold text-lg leading-none">{{ lv.up?.toLocaleString() }}</div>
+                <div class="text-[11px] text-slate-400 mt-0.5">上漲 +{{ lv.pct }}%</div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div v-if="result.currentPrice" class="px-5 py-5 border-t border-slate-100">

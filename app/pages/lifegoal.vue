@@ -184,7 +184,7 @@ const milestones = computed(() => {
             起始 {{ projection.settings.startInvestYear }} 年・{{ projection.settings.initialAge }} 歲・NT$ {{ fullMoney(projection.settings.initialAmount) }}・年化 {{ (projection.settings.expectedAnnualReturn * 100).toFixed(1) }}%
           </p>
         </div>
-        <div class="overflow-auto max-h-[520px]">
+        <div class="hidden sm:block overflow-auto max-h-[520px]">
           <table class="w-full text-sm">
             <thead class="sticky top-0 bg-slate-50 z-10">
               <tr class="border-b border-slate-100">
@@ -231,6 +231,25 @@ const milestones = computed(() => {
               </tr>
             </tbody>
           </table>
+        </div>
+        <!-- 手機卡片 -->
+        <div class="sm:hidden divide-y divide-slate-100 overflow-y-auto max-h-[520px]">
+          <div v-for="row in projection.rows" :key="row.year" class="p-4" :class="row.year === projection.currentYear ? 'bg-indigo-50' : ''">
+            <div class="flex items-center justify-between gap-2 mb-2">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="font-medium text-slate-800">{{ row.year }}</span>
+                <span class="text-xs text-slate-400">{{ row.age }} 歲</span>
+                <span v-if="row.year === projection.currentYear" class="text-xs bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded font-medium">今年</span>
+                <span v-if="row.year === projection.settings.stopContributionYear" class="text-xs bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded font-medium">停投</span>
+              </div>
+              <span class="font-bold text-slate-800 text-sm shrink-0">NT$ {{ fullMoney(row.assets) }}</span>
+            </div>
+            <div class="h-3 rounded-full overflow-hidden flex">
+              <div class="h-full bg-blue-400" :style="{ width: (row.starting / row.assets * 100) + '%' }"></div>
+              <div class="h-full bg-green-400" :style="{ width: (row.contributions / row.assets * 100) + '%' }"></div>
+              <div class="h-full bg-red-400" :style="{ width: (row.interest / row.assets * 100) + '%' }"></div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

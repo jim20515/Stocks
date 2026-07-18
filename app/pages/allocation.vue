@@ -253,7 +253,7 @@ function goPage(p: number) {
       <div class="px-5 py-4 border-b border-slate-100">
         <h3 class="text-sm font-semibold text-slate-800">槓桿配置 目前 vs 目標</h3>
       </div>
-      <div class="overflow-x-auto">
+      <div class="hidden sm:block overflow-x-auto">
       <table class="w-full text-sm">
         <thead>
           <tr class="bg-slate-50 border-b border-slate-100">
@@ -294,6 +294,27 @@ function goPage(p: number) {
           </tr>
         </tbody>
       </table>
+      </div>
+      <!-- 手機卡片 -->
+      <div class="sm:hidden divide-y divide-slate-100">
+        <div v-for="row in [
+          { label: '1x 一般', badge: 'bg-blue-50 text-blue-600', actual: d.actualAlloc.x1, target: d.targetAlloc.x1 },
+          { label: '2x 槓桿', badge: 'bg-orange-50 text-orange-600', actual: d.actualAlloc.x2, target: d.targetAlloc.x2 },
+          { label: '0x 類現金', badge: 'bg-slate-100 text-slate-500', actual: d.actualAlloc.x0, target: d.targetAlloc.x0 },
+        ]" :key="row.label" class="p-4">
+          <div class="flex items-center justify-between gap-2 mb-2">
+            <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-medium" :class="row.badge">{{ row.label }}</span>
+            <span class="text-sm font-semibold" :class="diffClass(row.actual, row.target)">差 {{ (row.actual - row.target) > 0 ? '+' : '' }}{{ (row.actual - row.target).toFixed(1) }}%</span>
+          </div>
+          <div class="flex items-center gap-4 text-xs mb-2">
+            <span class="text-slate-400">目前 <span class="font-semibold text-slate-800">{{ row.actual.toFixed(1) }}%</span></span>
+            <span class="text-slate-400">目標 <span class="text-slate-600">{{ row.target.toFixed(1) }}%</span></span>
+          </div>
+          <div class="relative h-2 bg-slate-100 rounded-full overflow-hidden">
+            <div class="absolute top-0 bottom-0 w-0.5 bg-slate-400 z-10" :style="{ left: Math.min(row.target, 99) + '%' }" />
+            <div class="h-full rounded-full transition-all duration-500" :class="barClass(row.actual, row.target)" :style="{ width: Math.min(row.actual, 100) + '%' }" />
+          </div>
+        </div>
       </div>
     </div>
 
