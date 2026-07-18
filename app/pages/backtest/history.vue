@@ -398,13 +398,12 @@ onMounted(() => loadStocks())
         <p v-for="(log, idx) in logs" :key="idx">{{ log }}</p>
       </div>
     </div>
+    <Teleport to="body">
+      <div v-if="tooltip"
+        class="fixed z-[9999] pointer-events-none px-2.5 py-1.5 bg-slate-800 text-slate-100 text-xs rounded-lg shadow-lg max-w-xs -translate-x-1/2"
+        :style="{ left: tooltip.x + 'px', top: tooltip.y + 'px' }">
+        {{ tooltip.text }}
+      </div>
+    </Teleport>
   </div>
-
-  <Teleport to="body">
-    <div v-if="tooltip"
-      class="fixed z-[9999] pointer-events-none px-2.5 py-1.5 bg-slate-800 text-slate-100 text-xs rounded-lg shadow-lg max-w-xs -translate-x-1/2"
-      :style="{ left: tooltip.x + 'px', top: tooltip.y + 'px' }">
-      {{ tooltip.text }}
-    </div>
-  </Teleport>
 </template>

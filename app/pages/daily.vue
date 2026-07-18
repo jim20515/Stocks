@@ -449,14 +449,13 @@ async function refreshWithSnapshot() {
         </div>
       </div>
     </div>
+    <Teleport to="body">
+      <div v-if="tooltip" class="fixed z-[9999] pointer-events-none px-2.5 py-1.5 bg-slate-800 text-slate-100 text-xs rounded-lg shadow-lg whitespace-nowrap"
+        :style="{ left: tooltip.x + 'px', top: tooltip.y + 'px' }">
+        {{ tooltip.text }}
+      </div>
+    </Teleport>
   </div>
-
-  <Teleport to="body">
-    <div v-if="tooltip" class="fixed z-[9999] pointer-events-none px-2.5 py-1.5 bg-slate-800 text-slate-100 text-xs rounded-lg shadow-lg whitespace-nowrap"
-      :style="{ left: tooltip.x + 'px', top: tooltip.y + 'px' }">
-      {{ tooltip.text }}
-    </div>
-  </Teleport>
 </template>
 
 <style scoped>

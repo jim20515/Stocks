@@ -2,7 +2,7 @@
   <div>
     <NuxtRouteAnnouncer />
     <NuxtLayout>
-      <NuxtPage />
+      <NuxtPage :transition="{ name: 'page', mode: 'out-in' }" />
     </NuxtLayout>
   </div>
 </template>
@@ -29,6 +29,12 @@ button, a, label, nav, header, [role="button"], .no-select {
   input, select, textarea { font-size: 16px !important; }
   * { -webkit-overflow-scrolling: touch; }
   ::-webkit-scrollbar { display: none; }
+}
+
+/* 觸控裝置：按壓縮放回饋（桌機滑鼠不套用，維持零回歸） */
+@media (hover: none) {
+  button:not(:disabled), [role="button"], a[href] { transition: transform 0.1s ease; }
+  button:not(:disabled):active, [role="button"]:active, a[href]:active { transform: scale(0.97); }
 }
 
 /* 彈窗淡入 */

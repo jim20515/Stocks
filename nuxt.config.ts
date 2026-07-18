@@ -18,8 +18,8 @@ export default defineNuxtConfig({
         { name: 'viewport', content: 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content' },
         { name: 'theme-color', content: '#4f46e5' },
         { name: 'apple-mobile-web-app-capable', content: 'yes' },
-        // black-translucent：狀態列沉浸，內容延伸到狀態列後方（配合 .safe-top）
-        { name: 'apple-mobile-web-app-status-bar-style', content: 'black-translucent' },
+        // default：淺色狀態列黑字，內容在狀態列下方（本 App 為淺色主題，用 black-translucent 白字會看不見）
+        { name: 'apple-mobile-web-app-status-bar-style', content: 'default' },
         { name: 'apple-mobile-web-app-title', content: '股票看板' },
       ],
       link: [

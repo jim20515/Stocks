@@ -37,7 +37,7 @@ function hideTip() { tooltip.value = null }
 </script>
 
 <template>
-  <header class="bg-white border-b border-slate-200 px-4 md:px-6">
+  <header class="sticky top-0 z-20 bg-white/95 backdrop-blur border-b border-slate-200 px-4 md:px-6 safe-top">
     <!-- 主列 -->
     <div class="h-14 flex items-center justify-between">
       <div class="flex items-center gap-3 min-w-0">
