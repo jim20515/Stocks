@@ -314,7 +314,8 @@ function goPage(p: number) {
       </div>
 
       <div v-if="!d" class="py-10 text-center text-sm text-slate-400">載入中…</div>
-      <div v-else class="overflow-x-auto">
+      <template v-else>
+      <div class="hidden sm:block overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
             <tr class="bg-slate-50 border-b border-slate-100">
@@ -426,6 +427,54 @@ function goPage(p: number) {
           </tbody>
         </table>
       </div>
+
+      <!-- 手機卡片 -->
+      <div class="sm:hidden divide-y divide-slate-100">
+        <div v-for="h in pagedItems" :key="h.stockCode" class="p-4">
+          <div class="flex items-start justify-between gap-2 mb-2.5">
+            <div class="flex items-center gap-2.5 min-w-0">
+              <div class="w-8 h-8 rounded-full bg-indigo-50 flex items-center justify-center shrink-0"><span class="text-xs font-bold text-indigo-600">{{ h.stockCode.slice(0,2) }}</span></div>
+              <div class="min-w-0">
+                <div class="flex items-center gap-1.5">
+                  <p class="font-semibold text-slate-800">{{ h.stockCode }}</p>
+                  <span class="inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-medium" :class="leverageBadge[h.leverageMultiplier] ?? 'bg-slate-100 text-slate-500'">{{ leverageLabel[h.leverageMultiplier] ?? h.leverageMultiplier + 'x' }}</span>
+                </div>
+                <p class="text-xs text-slate-400 truncate">{{ h.stockName }}</p>
+              </div>
+            </div>
+            <div class="text-right shrink-0">
+              <p class="font-medium" :class="pnlClass(h.profit)">{{ signMoney(h.profit) }}</p>
+              <p class="text-xs" :class="pnlClass(h.profitPct)">{{ pctSigned(h.profitPct) }}</p>
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+            <div class="flex justify-between gap-2"><span class="text-slate-400">股數</span><span class="text-slate-600">{{ h.shares.toLocaleString() }}</span></div>
+            <div class="flex justify-between gap-2"><span class="text-slate-400">現價</span><span class="text-slate-700">{{ h.currentPrice ? h.currentPrice.toLocaleString() : '—' }}</span></div>
+            <div class="flex justify-between gap-2"><span class="text-slate-400">均成本</span><span class="text-slate-500">{{ h.leverageMultiplier === 0 ? '—' : (h.avgCost != null ? h.avgCost.toLocaleString() : '—') }}</span></div>
+            <div class="flex justify-between gap-2"><span class="text-slate-400">市值</span><span class="text-slate-800 font-medium">{{ money(h.marketValue) }}</span></div>
+            <div class="flex justify-between gap-2"><span class="text-slate-400">總成本</span><span class="text-slate-600">{{ h.totalCost != null ? money(h.totalCost) : '—' }}</span></div>
+            <div class="flex justify-between gap-2"><span class="text-slate-400">佔比</span><span class="text-slate-600">{{ pct(h.allocation) }}</span></div>
+            <div class="flex justify-between gap-2 col-span-2"><span class="text-slate-400">Beta 貢獻</span><span class="font-mono font-bold text-indigo-600">{{ h.betaContrib.toFixed(4) }}</span></div>
+          </div>
+        </div>
+        <div v-if="d.cash.amount > 0" class="p-4 bg-slate-50/40 flex items-center justify-between">
+          <div class="flex items-center gap-2.5">
+            <div class="w-8 h-8 rounded-full bg-green-50 flex items-center justify-center shrink-0"><span class="text-xs font-bold text-green-600">現</span></div>
+            <div><p class="font-semibold text-slate-800">現金</p><p class="text-xs text-slate-400">佔比 {{ pct(d.cash.allocation) }}</p></div>
+          </div>
+          <p class="font-medium text-slate-800">{{ money(d.cash.amount) }}</p>
+        </div>
+        <div class="p-4 bg-indigo-50">
+          <div class="flex items-center justify-between mb-1.5"><span class="font-semibold text-slate-700">合計</span><span class="font-mono text-indigo-700 text-base">Beta {{ d.currentBeta }}</span></div>
+          <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+            <div class="flex justify-between gap-2"><span class="text-slate-500">市值</span><span class="text-slate-800 font-medium">{{ money(d.totalValue) }}</span></div>
+            <div class="flex justify-between gap-2"><span class="text-slate-500">總成本</span><span class="text-slate-700">{{ money(totalsRow.cost) }}</span></div>
+            <div class="flex justify-between gap-2"><span class="text-slate-500">總獲利</span><span :class="pnlClass(totalsRow.profit)">{{ signMoney(totalsRow.profit) }}</span></div>
+            <div class="flex justify-between gap-2"><span class="text-slate-500">獲利%</span><span :class="pnlClass(totalsRow.profitPct)">{{ pctSigned(totalsRow.profitPct) }}</span></div>
+          </div>
+        </div>
+      </div>
+      </template>
 
       <!-- 分頁 -->
       <div v-if="totalPages > 1" class="flex items-center justify-between px-5 py-3 border-t border-slate-100">

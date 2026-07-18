@@ -313,7 +313,8 @@ async function refreshWithSnapshot() {
         尚無記錄，點上方「重新計算歷史資料」或等今日 14:35 自動存入
       </div>
 
-      <div v-else class="overflow-x-auto">
+      <div v-else>
+        <div class="hidden sm:block overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
             <tr class="bg-slate-50 border-b border-slate-100">
@@ -397,6 +398,28 @@ async function refreshWithSnapshot() {
             </tr>
           </tbody>
         </table>
+        </div>
+
+        <!-- 手機卡片 -->
+        <div class="sm:hidden divide-y divide-slate-100">
+          <div v-for="row in rows" :key="row.date" class="p-4">
+            <div class="flex items-start justify-between gap-2 mb-2.5">
+              <p class="font-semibold text-slate-700">{{ row.date }}</p>
+              <div class="text-right">
+                <p class="font-semibold" :class="row.daily_change > 0 ? 'text-red-500' : row.daily_change < 0 ? 'text-green-600' : 'text-slate-400'">{{ row.daily_change !== null ? (row.daily_change > 0 ? '+' : '') + money(row.daily_change) : '—' }}</p>
+                <p class="text-xs" :class="row.daily_change_pct > 0 ? 'text-red-500' : row.daily_change_pct < 0 ? 'text-green-600' : 'text-slate-400'">{{ pct(row.daily_change_pct) }}</p>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+              <div class="flex justify-between gap-2"><span class="text-slate-400">總市值</span><span class="text-slate-800 font-medium">{{ money(row.total_value) }}</span></div>
+              <div class="flex justify-between gap-2"><span class="text-slate-400">總成本</span><span class="text-slate-600">{{ money(row.total_cost) }}</span></div>
+              <div class="flex justify-between gap-2"><span class="text-slate-400">當日買賣</span><span :class="row.daily_trade_amount > 0 ? 'text-red-500' : row.daily_trade_amount < 0 ? 'text-green-600' : 'text-slate-400'">{{ row.daily_trade_amount !== 0 ? (row.daily_trade_amount > 0 ? '+' : '') + money(row.daily_trade_amount) : '—' }}</span></div>
+              <div class="flex justify-between gap-2"><span class="text-slate-400">總漲跌</span><span :class="row.total_profit > 0 ? 'text-red-500' : row.total_profit < 0 ? 'text-green-600' : 'text-slate-400'">{{ row.total_profit > 0 ? '+' : '' }}{{ money(row.total_profit) }}</span></div>
+              <div class="flex justify-between gap-2"><span class="text-slate-400">總漲跌幅</span><span :class="row.total_profit_pct > 0 ? 'text-red-500' : row.total_profit_pct < 0 ? 'text-green-600' : 'text-slate-400'">{{ pct(row.total_profit_pct) }}</span></div>
+              <div class="flex justify-between gap-2"><span class="text-slate-400">累積獲利</span><span :class="row.cum_profit > 0 ? 'text-red-500' : row.cum_profit < 0 ? 'text-green-600' : 'text-slate-400'">{{ row.cum_profit > 0 ? '+' : '' }}{{ money(row.cum_profit) }}</span></div>
+            </div>
+          </div>
+        </div>
 
         <!-- 分頁 -->
         <div v-if="totalPages > 1" class="flex items-center justify-between px-5 py-3 border-t border-slate-100">

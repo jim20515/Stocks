@@ -318,7 +318,8 @@ const detailRows = computed<Row[]>(() => {
             <p class="text-xs text-slate-400">共 {{ detailRows.length }} 筆<span v-if="result.priceDate"> · 價格 {{ result.priceDate }}</span></p>
           </div>
           <div v-if="detailRows.length === 0" class="py-10 text-center text-sm text-slate-400">此條件下無交易</div>
-          <div v-else class="overflow-x-auto">
+          <template v-else>
+          <div class="hidden sm:block overflow-x-auto">
             <table class="w-full text-sm">
               <thead>
                 <tr class="bg-slate-50 border-b border-slate-100">
@@ -359,6 +360,28 @@ const detailRows = computed<Row[]>(() => {
               </tbody>
             </table>
           </div>
+          <!-- 手機卡片 -->
+          <div class="sm:hidden divide-y divide-slate-100">
+            <div v-for="(r, i) in detailRows" :key="i" class="p-4" :class="r.orphan ? 'bg-slate-50/40' : ''">
+              <div class="flex items-start justify-between gap-2 mb-2">
+                <p class="font-mono font-medium text-slate-700 min-w-0 truncate">{{ r.code }} <span class="text-slate-400 text-xs font-sans">{{ r.name }}</span></p>
+                <div class="text-right shrink-0 font-medium" :class="r.profit != null ? pctClass(r.profit) : 'text-slate-300'">
+                  <template v-if="r.profit != null">{{ r.profit >= 0 ? '+' : '' }}{{ money(r.profit) }}</template><template v-else>—</template>
+                  <span v-if="r.held" class="text-xs text-slate-300 ml-0.5">未實現</span>
+                  <span v-else-if="r.orphan" class="text-xs text-slate-300 ml-0.5">僅呈現</span>
+                </div>
+              </div>
+              <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                <div class="flex justify-between gap-2"><span class="text-slate-400">買入日期</span><span v-if="r.orphan" class="text-slate-400">買入已切掉</span><span v-else class="text-slate-600">{{ r.buyDate }}</span></div>
+                <div class="flex justify-between gap-2"><span class="text-slate-400">買入價</span><span class="font-mono text-indigo-600">{{ r.buyPrice != null ? r.buyPrice.toLocaleString('zh-TW') : '—' }}</span></div>
+                <div class="flex justify-between gap-2"><span class="text-slate-400">賣出日期</span><span v-if="r.held" class="text-amber-600">持有中</span><span v-else class="text-slate-600">{{ r.sellDate }}</span></div>
+                <div class="flex justify-between gap-2"><span class="text-slate-400">賣出/現價</span><span class="font-mono" :class="r.held ? 'text-slate-400' : 'text-red-500'">{{ r.sellPrice != null ? r.sellPrice.toLocaleString('zh-TW') : '—' }}</span></div>
+                <div class="flex justify-between gap-2"><span class="text-slate-400">股數</span><span class="text-slate-600">{{ shareStr(r.shares) }}</span></div>
+                <div class="flex justify-between gap-2"><span class="text-slate-400">剩餘股數</span><span class="text-slate-700">{{ shareStr(r.sharesAfter) }}</span></div>
+              </div>
+            </div>
+          </div>
+          </template>
         </div>
       </template>
     </template>

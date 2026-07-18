@@ -1105,7 +1105,8 @@ function goTradePage(p: number) {
         <div v-if="result.trades.length === 0" class="py-12 text-center text-sm text-slate-400">
           此期間內未觸發任何交易，請考慮縮小網格間距或拉長期間
         </div>
-        <div v-else class="overflow-x-auto">
+        <div v-else>
+          <div class="hidden sm:block overflow-x-auto">
           <table class="w-full text-sm">
             <thead>
               <tr class="bg-slate-50 border-b border-slate-100">
@@ -1143,6 +1144,28 @@ function goTradePage(p: number) {
               </tr>
             </tbody>
           </table>
+          </div>
+
+          <!-- 手機卡片 -->
+          <div class="sm:hidden divide-y divide-slate-100">
+            <div v-for="(t, i) in pagedTrades" :key="i" class="p-4">
+              <div class="flex items-center justify-between gap-2 mb-2">
+                <div class="flex items-center gap-2">
+                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium" :class="t.action === 'buy' ? 'bg-indigo-50 text-indigo-600' : 'bg-red-50 text-red-600'">{{ t.action === 'buy' ? '買入' : '賣出' }}</span>
+                  <span class="text-sm font-medium text-slate-700">{{ t.date }}</span>
+                </div>
+                <span class="font-medium" :class="t.profit != null ? pctClass(t.profit) : 'text-slate-300'">{{ t.profit != null ? (t.profit >= 0 ? '+' : '') + money(t.profit) : '—' }}</span>
+              </div>
+              <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                <div class="flex justify-between gap-2"><span class="text-slate-400">成交價</span><span class="text-slate-700">{{ t.price.toLocaleString('zh-TW') }}</span></div>
+                <div class="flex justify-between gap-2"><span class="text-slate-400">股數</span><span class="text-slate-600">{{ t.shares.toLocaleString() }}</span></div>
+                <div class="flex justify-between gap-2"><span class="text-slate-400">金額</span><span class="text-slate-700">{{ money(t.amount) }}</span></div>
+                <div class="flex justify-between gap-2"><span class="text-slate-400">費用+稅</span><span class="text-slate-400">{{ money(t.fee) }}</span></div>
+                <div class="flex justify-between gap-2"><span class="text-slate-400">剩餘現金</span><span class="text-slate-600">{{ money(t.cashAfter) }}</span></div>
+                <div class="flex justify-between gap-2"><span class="text-slate-400">持股</span><span class="text-slate-600">{{ t.sharesAfter.toLocaleString() }}</span></div>
+              </div>
+            </div>
+          </div>
 
           <!-- 分頁 -->
           <div v-if="totalTradePages > 1" class="flex items-center justify-between px-5 py-3 border-t border-slate-100">

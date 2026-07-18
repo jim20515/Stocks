@@ -255,7 +255,8 @@ async function refreshPrices() {
       <div v-if="!allItems.length" class="py-12 text-center text-sm text-slate-400">
         尚無交易，點右上角「新增交易」開始記錄
       </div>
-      <div v-else class="overflow-x-auto" >
+      <template v-else>
+      <div class="hidden sm:block overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
             <tr class="bg-slate-50 border-b border-slate-100">
@@ -395,6 +396,62 @@ async function refreshPrices() {
           </tbody>
         </table>
       </div>
+
+      <!-- 手機卡片 -->
+      <div class="sm:hidden divide-y divide-slate-100">
+        <div v-for="h in items" :key="h.id" class="p-4"
+          :class="h.leverageMultiplier === 0 ? 'bg-green-50/30' : ''">
+          <div class="flex items-start justify-between gap-2 mb-2.5">
+            <div class="flex items-center gap-2.5 min-w-0">
+              <div class="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
+                :class="h.leverageMultiplier === 0 ? 'bg-green-50' : 'bg-indigo-50'">
+                <span class="text-xs font-bold" :class="h.leverageMultiplier === 0 ? 'text-green-600' : 'text-indigo-600'">{{ h.stockCode.slice(0,2) }}</span>
+              </div>
+              <div class="min-w-0">
+                <div class="flex items-center gap-1.5">
+                  <p class="font-semibold text-slate-800">{{ h.stockCode }}</p>
+                  <span class="inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-medium"
+                    :class="h.leverageMultiplier === 0 ? 'bg-green-50 text-green-600' : h.leverageMultiplier === 2 ? 'bg-orange-50 text-orange-600' : 'bg-indigo-50 text-indigo-600'">
+                    {{ h.leverageMultiplier === 0 ? '類現金' : h.leverageMultiplier + 'x' }}
+                  </span>
+                </div>
+                <p class="text-xs text-slate-400 truncate">{{ h.stockName }}</p>
+              </div>
+            </div>
+            <div class="text-right shrink-0">
+              <p class="font-semibold" :class="h.profit > 0 ? 'text-red-500' : h.profit < 0 ? 'text-green-600' : 'text-slate-400'">
+                {{ h.profit > 0 ? '+' : '' }}{{ money(h.profit) }}
+              </p>
+              <p class="text-xs" :class="h.profitPct > 0 ? 'text-red-500' : h.profitPct < 0 ? 'text-green-600' : 'text-slate-400'">
+                {{ h.profitPct > 0 ? '+' : '' }}{{ h.profitPct }}%
+              </p>
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+            <div class="flex justify-between gap-2"><span class="text-slate-400">股數</span><span :class="h.shares < 0 ? 'text-green-600' : 'text-slate-700'">{{ Math.abs(h.shares).toLocaleString() }}{{ h.shares < 0 ? '(賣)' : '' }}</span></div>
+            <div class="flex justify-between gap-2"><span class="text-slate-400">均成本</span><span class="text-slate-700">{{ h.shares < 0 ? (h.costBasis ?? h.averageCost).toLocaleString() : h.averageCost.toLocaleString() }}</span></div>
+            <div class="flex justify-between gap-2"><span class="text-slate-400">現價</span><span class="text-slate-700">{{ h.shares < 0 ? h.averageCost.toLocaleString() : (h.currentPrice ? h.currentPrice.toLocaleString() : '—') }}</span></div>
+            <div class="flex justify-between gap-2"><span class="text-slate-400">市值</span><span class="text-slate-700">{{ h.shares < 0 ? money(Math.round(h.averageCost * Math.abs(h.shares))) : (h.value ? money(h.value) : '—') }}</span></div>
+            <div class="flex justify-between gap-2"><span class="text-slate-400">成本總額</span><span class="text-slate-600">{{ h.shares < 0 ? money(Math.round((h.costBasis ?? h.averageCost) * Math.abs(h.shares))) : money(h.cost) }}</span></div>
+            <div class="flex justify-between gap-2"><span class="text-slate-400">交易日</span><span class="text-slate-600">{{ h.buyDate }}</span></div>
+          </div>
+          <div class="flex items-center justify-between mt-2.5">
+            <span class="text-xs text-indigo-400">{{ h.account || '' }}</span>
+            <div class="flex items-center gap-1">
+              <button @click="openCopyModal(h)" title="複製到新增" class="p-1.5 rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 transition">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+              </button>
+              <button @click="openEditModal(h)" title="修改" class="p-1.5 rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 transition">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+              </button>
+              <button @click="askRemove(h.id, h.stockName)" title="刪除" class="p-1.5 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500 transition">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      </template>
 
       <!-- 分頁 -->
       <div v-if="totalPages > 1" class="flex items-center justify-between px-5 py-3 border-t border-slate-100">
