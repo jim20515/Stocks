@@ -244,8 +244,9 @@ async function refreshWithSnapshot() {
     </div>
 
     <!-- 進度 Modal -->
-    <div v-if="showModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div class="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4">
+    <BottomSheet :model-value="showModal" max-width="max-w-md" :persistent="!importDone"
+      @update:model-value="showModal = false">
+      <div class="p-6 space-y-4">
         <div class="flex items-center justify-between">
           <h3 class="font-bold text-slate-800 text-base">重新計算歷史資料</h3>
           <span v-if="!importDone" class="text-xs text-slate-400 animate-pulse">處理中…</span>
@@ -306,7 +307,7 @@ async function refreshWithSnapshot() {
           關閉
         </button>
       </div>
-    </div>
+    </BottomSheet>
 
     <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
       <div v-if="!allRows.length" class="py-16 text-center text-sm text-slate-400">

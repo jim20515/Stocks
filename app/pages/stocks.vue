@@ -489,34 +489,31 @@ async function refreshPrices() {
     </div>
 
     <!-- 刪除確認彈跳視窗 -->
-    <Teleport to="body">
-      <div v-if="confirmDialog"
-        class="fixed inset-0 bg-black/40 z-[70] flex items-center justify-center p-4"
-        @click.self="!confirmLoading && (confirmDialog = null)">
-        <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 text-center">
-          <div class="w-10 h-10 mx-auto mb-3 rounded-full bg-red-50 text-red-500 flex items-center justify-center">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+    <BottomSheet :model-value="!!confirmDialog" max-width="max-w-sm"
+      :persistent="confirmLoading" @update:model-value="confirmDialog = null">
+      <div v-if="confirmDialog" class="p-6 text-center">
+        <div class="w-10 h-10 mx-auto mb-3 rounded-full bg-red-50 text-red-500 flex items-center justify-center">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+        </div>
+        <h2 class="text-base font-semibold text-slate-800 mb-1">{{ confirmDialog.title }}</h2>
+        <p class="text-sm text-slate-500 mb-5 leading-6">{{ confirmDialog.message }}</p>
+        <div class="flex gap-2">
+          <button @click="confirmDialog = null" :disabled="confirmLoading"
+            class="flex-1 px-4 py-2 rounded-lg text-sm text-slate-600 border border-slate-200 hover:bg-slate-50 disabled:opacity-50 transition">
+            取消
+          </button>
+          <button @click="confirmOk" :disabled="confirmLoading"
+            class="flex-1 flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white bg-red-500 hover:bg-red-600 disabled:opacity-50 transition">
+            <svg v-if="confirmLoading" class="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-width="2" d="M21 12a9 9 0 11-6.219-8.56" />
             </svg>
-          </div>
-          <h2 class="text-base font-semibold text-slate-800 mb-1">{{ confirmDialog.title }}</h2>
-          <p class="text-sm text-slate-500 mb-5 leading-6">{{ confirmDialog.message }}</p>
-          <div class="flex gap-2">
-            <button @click="confirmDialog = null" :disabled="confirmLoading"
-              class="flex-1 px-4 py-2 rounded-lg text-sm text-slate-600 border border-slate-200 hover:bg-slate-50 disabled:opacity-50 transition">
-              取消
-            </button>
-            <button @click="confirmOk" :disabled="confirmLoading"
-              class="flex-1 flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white bg-red-500 hover:bg-red-600 disabled:opacity-50 transition">
-              <svg v-if="confirmLoading" class="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-width="2" d="M21 12a9 9 0 11-6.219-8.56" />
-              </svg>
-              {{ confirmLoading ? '刪除中…' : confirmDialog.okText }}
-            </button>
-          </div>
+            {{ confirmLoading ? '刪除中…' : confirmDialog.okText }}
+          </button>
         </div>
       </div>
-    </Teleport>
+    </BottomSheet>
   </div>
 </template>

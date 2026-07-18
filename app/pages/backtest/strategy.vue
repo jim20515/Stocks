@@ -1196,81 +1196,87 @@ function goTradePage(p: number) {
   </div>
 
   <!-- 全部交易明細 Modal -->
-  <Teleport to="body">
-    <div v-if="showTradeModal"
-      class="fixed inset-0 z-50 flex items-center justify-center p-4"
-      @click.self="showTradeModal = false">
-      <div class="absolute inset-0 bg-black/40" @click="showTradeModal = false" />
-      <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col">
-        <!-- Header -->
-        <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-          <div>
-            <p class="text-base font-semibold text-slate-800">全部交易明細</p>
-            <p class="text-xs text-slate-400 mt-0.5">{{ selectedCode }} · 依買入日期排序 · 共 {{ modalSortedPairs.length }} 筆配對</p>
-          </div>
-          <button @click="showTradeModal = false"
-            class="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 transition">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-            </svg>
-          </button>
+  <BottomSheet v-model="showTradeModal" max-width="max-w-2xl">
+    <template #header>
+      <div>
+        <p class="text-base font-semibold text-slate-800">全部交易明細</p>
+        <p class="text-xs text-slate-400 mt-0.5">{{ selectedCode }} · 依買入日期排序 · 共 {{ modalSortedPairs.length }} 筆配對</p>
+      </div>
+    </template>
+
+    <!-- 桌機表格 -->
+    <div class="hidden sm:block">
+      <table class="w-full text-sm">
+        <thead class="sticky top-0 bg-slate-50 z-10">
+          <tr class="border-b border-slate-100">
+            <th class="text-left px-5 py-2.5 text-xs font-medium text-slate-500">買入日期</th>
+            <th class="text-right px-4 py-2.5 text-xs font-medium text-slate-500">買入價</th>
+            <th class="text-left px-5 py-2.5 text-xs font-medium text-slate-500">賣出日期</th>
+            <th class="text-right px-4 py-2.5 text-xs font-medium text-slate-500">賣出價</th>
+            <th class="text-right px-5 py-2.5 text-xs font-medium text-slate-500">獲利（元）</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-50">
+          <tr v-for="(p, i) in modalSortedPairs" :key="i"
+            class="hover:bg-slate-50/60 transition">
+            <td class="px-5 py-2.5 text-slate-600">{{ p.buyDate }}</td>
+            <td class="px-4 py-2.5 text-right font-mono text-indigo-600">{{ p.buyPrice.toLocaleString('zh-TW') }}</td>
+            <td class="px-5 py-2.5 text-slate-600">{{ p.sellDate }}</td>
+            <td class="px-4 py-2.5 text-right font-mono text-red-500">{{ p.sellPrice.toLocaleString('zh-TW') }}</td>
+            <td class="px-5 py-2.5 text-right font-medium" :class="pctClass(p.profit)">
+              {{ p.profit >= 0 ? '+' : '' }}{{ money(p.profit) }}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <!-- 手機卡片 -->
+    <div class="sm:hidden divide-y divide-slate-100">
+      <div v-for="(p, i) in modalSortedPairs" :key="i" class="px-5 py-3">
+        <div class="flex items-center justify-between gap-2 mb-1.5">
+          <span class="text-xs text-slate-400">{{ p.buyDate }} → {{ p.sellDate }}</span>
+          <span class="font-medium" :class="pctClass(p.profit)">{{ p.profit >= 0 ? '+' : '' }}{{ money(p.profit) }}</span>
         </div>
-        <!-- Table -->
-        <div class="overflow-y-auto flex-1">
-          <div class="hidden sm:block">
-          <table class="w-full text-sm">
-            <thead class="sticky top-0 bg-slate-50 z-10">
-              <tr class="border-b border-slate-100">
-                <th class="text-left px-5 py-2.5 text-xs font-medium text-slate-500">買入日期</th>
-                <th class="text-right px-4 py-2.5 text-xs font-medium text-slate-500">買入價</th>
-                <th class="text-left px-5 py-2.5 text-xs font-medium text-slate-500">賣出日期</th>
-                <th class="text-right px-4 py-2.5 text-xs font-medium text-slate-500">賣出價</th>
-                <th class="text-right px-5 py-2.5 text-xs font-medium text-slate-500">獲利（元）</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-slate-50">
-              <tr v-for="(p, i) in modalSortedPairs" :key="i"
-                class="hover:bg-slate-50/60 transition">
-                <td class="px-5 py-2.5 text-slate-600">{{ p.buyDate }}</td>
-                <td class="px-4 py-2.5 text-right font-mono text-indigo-600">{{ p.buyPrice.toLocaleString('zh-TW') }}</td>
-                <td class="px-5 py-2.5 text-slate-600">{{ p.sellDate }}</td>
-                <td class="px-4 py-2.5 text-right font-mono text-red-500">{{ p.sellPrice.toLocaleString('zh-TW') }}</td>
-                <td class="px-5 py-2.5 text-right font-medium" :class="pctClass(p.profit)">
-                  {{ p.profit >= 0 ? '+' : '' }}{{ money(p.profit) }}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-          </div>
-          <!-- 手機卡片 -->
-          <div class="sm:hidden divide-y divide-slate-100">
-            <div v-for="(p, i) in modalSortedPairs" :key="i" class="px-5 py-3">
-              <div class="flex items-center justify-between gap-2 mb-1.5">
-                <span class="text-xs text-slate-400">{{ p.buyDate }} → {{ p.sellDate }}</span>
-                <span class="font-medium" :class="pctClass(p.profit)">{{ p.profit >= 0 ? '+' : '' }}{{ money(p.profit) }}</span>
-              </div>
-              <div class="flex items-center gap-4 text-xs">
-                <span class="text-slate-400">買 <span class="font-mono text-indigo-600">{{ p.buyPrice.toLocaleString('zh-TW') }}</span></span>
-                <span class="text-slate-400">賣 <span class="font-mono text-red-500">{{ p.sellPrice.toLocaleString('zh-TW') }}</span></span>
-              </div>
-            </div>
-          </div>
-          <div v-if="modalSortedPairs.length === 0" class="py-10 text-center text-sm text-slate-400">尚無已完成的買賣配對</div>
-        </div>
-        <!-- Footer 小計 -->
-        <div class="px-6 py-3 border-t border-slate-100 bg-slate-50/60 rounded-b-2xl flex items-center justify-between text-xs text-slate-500">
-          <span>已實現損益合計（{{ modalSortedPairs.length }} 筆配對）</span>
-          <span class="font-semibold text-sm" :class="pctClass(result!.realizedProfit)">
-            {{ result!.realizedProfit >= 0 ? '+' : '' }}{{ money(result!.realizedProfit) }} 元
-          </span>
+        <div class="flex items-center gap-4 text-xs">
+          <span class="text-slate-400">買 <span class="font-mono text-indigo-600">{{ p.buyPrice.toLocaleString('zh-TW') }}</span></span>
+          <span class="text-slate-400">賣 <span class="font-mono text-red-500">{{ p.sellPrice.toLocaleString('zh-TW') }}</span></span>
         </div>
       </div>
     </div>
-  </Teleport>
+    <div v-if="modalSortedPairs.length === 0" class="py-10 text-center text-sm text-slate-400">尚無已完成的買賣配對</div>
+
+    <template #footer>
+      <div class="px-6 py-3 bg-slate-50/60 flex items-center justify-between text-xs text-slate-500">
+        <span>已實現損益合計（{{ modalSortedPairs.length }} 筆配對）</span>
+        <span class="font-semibold text-sm" :class="pctClass(result!.realizedProfit)">
+          {{ result!.realizedProfit >= 0 ? '+' : '' }}{{ money(result!.realizedProfit) }} 元
+        </span>
+      </div>
+    </template>
+  </BottomSheet>
 </template>
 
 <style>
 .vc-popover-content-wrapper {
   z-index: 9999 !important;
+}
+
+/* 手機：日曆常駐在底部滿版（bottom sheet 樣式），取代預設貼著按鈕的 popover */
+@media (max-width: 639px) {
+  .vc-popover-content-wrapper {
+    position: fixed !important;
+    inset: auto 0 0 0 !important;
+    transform: none !important;
+    width: 100% !important;
+  }
+  .vc-popover-content {
+    width: 100% !important;
+    border-radius: 1rem 1rem 0 0 !important;
+    box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.18) !important;
+    padding-bottom: env(safe-area-inset-bottom) !important;
+  }
+  .vc-popover-caret { display: none !important; }
+  .vc-container { width: 100% !important; border: none !important; }
+  .vc-pane-layout { width: 100% !important; }
 }
 </style>
