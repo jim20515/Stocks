@@ -356,7 +356,8 @@ async function onCodeBlur() {
 }
 
 async function submitForm() {
-  if (!form.value.stockCode || !form.value.shares || !form.value.averageCost) return
+  if (!form.value.stockCode || !form.value.averageCost) return
+  if (!(Number(form.value.shares) > 0)) return
   const payload = {
     stockCode: form.value.stockCode.trim(),
     stockName: form.value.stockName.trim() || form.value.stockCode.trim(),
@@ -626,7 +627,7 @@ async function submitForm() {
             <div class="grid grid-cols-2 gap-4">
               <div>
                 <label class="block text-xs font-medium text-slate-600 mb-1.5">交易股數</label>
-                <input v-model="form.shares" type="number" min="1" placeholder="例：1000（1張）"
+                <input v-model="form.shares" type="number" min="0" step="1000" placeholder="例：1000（1張）"
                   class="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300" />
               </div>
               <div>
