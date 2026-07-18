@@ -291,7 +291,8 @@ onMounted(() => loadStocks())
       <div v-if="stocks.length === 0" class="px-5 py-8 text-center text-sm text-slate-400">
         尚無資料，請輸入股票代號後點「更新股票歷史數據」
       </div>
-      <div v-else class="overflow-x-auto">
+      <template v-else>
+      <div class="hidden sm:block overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
             <tr class="bg-slate-50 border-b border-slate-100">
@@ -345,6 +346,28 @@ onMounted(() => loadStocks())
           </tbody>
         </table>
       </div>
+      <!-- 手機卡片 -->
+      <div class="sm:hidden divide-y divide-slate-100">
+        <div v-for="s in pagedStocks" :key="s.code" class="p-4">
+          <div class="flex items-center justify-between gap-2">
+            <div class="flex items-center gap-2.5 min-w-0">
+              <div class="w-8 h-8 rounded-full bg-indigo-50 flex items-center justify-center shrink-0"><span class="text-xs font-bold text-indigo-600">{{ s.code.slice(0, 2) }}</span></div>
+              <div class="min-w-0"><p class="font-semibold text-slate-800">{{ s.code }}</p><p class="text-xs text-slate-400 truncate">{{ s.name }}</p></div>
+            </div>
+            <button @click="deleteStock(s.code)" :disabled="deletingCode === s.code" class="shrink-0 p-1.5 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500 disabled:opacity-40 transition">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
+          </div>
+          <div class="grid grid-cols-3 gap-x-3 gap-y-1 text-xs mt-2.5">
+            <div class="flex flex-col"><span class="text-slate-400">起始</span><span class="text-slate-500">{{ s.minDate }}</span></div>
+            <div class="flex flex-col"><span class="text-slate-400">截止</span><span class="text-slate-500">{{ s.maxDate }}</span></div>
+            <div class="flex flex-col"><span class="text-slate-400">筆數</span><span class="text-slate-600">{{ s.count.toLocaleString() }}</span></div>
+          </div>
+        </div>
+      </div>
+      </template>
       <div v-if="totalPages > 1" class="flex items-center justify-between px-5 py-3 border-t border-slate-100">
         <p class="text-xs text-slate-400">共 {{ stocks.length }} 筆，第 {{ currentPage }} / {{ totalPages }} 頁</p>
         <div class="flex items-center gap-1">

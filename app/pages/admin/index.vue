@@ -118,7 +118,8 @@ function providerLabel(p: string) {
       <p v-if="errorMsg" class="px-5 py-2 text-xs text-red-500">{{ errorMsg }}</p>
 
       <div v-if="sortedUsers.length === 0" class="py-12 text-center text-sm text-slate-400">無符合的帳號</div>
-      <div v-else class="overflow-x-auto">
+      <template v-else>
+      <div class="hidden sm:block overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
             <tr class="bg-slate-50 border-b border-slate-100">
@@ -170,6 +171,28 @@ function providerLabel(p: string) {
           </tbody>
         </table>
       </div>
+      <!-- 手機卡片 -->
+      <div class="sm:hidden divide-y divide-slate-100">
+        <div v-for="u in pagedUsers" :key="u.id" class="p-4">
+          <div class="flex items-start justify-between gap-2 mb-2">
+            <p class="text-sm font-medium text-slate-700 break-all">{{ u.email }}<span v-if="u.id === user?.id" class="ml-1.5 text-xs text-indigo-400">（你）</span></p>
+            <span v-if="u.isAdmin" class="shrink-0 inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-600">管理員</span>
+          </div>
+          <div class="flex items-center gap-1.5 mb-2">
+            <span v-for="p in u.providers" :key="p" class="inline-flex px-2 py-0.5 rounded-full text-xs font-medium" :class="p === 'google' ? 'bg-red-50 text-red-500' : 'bg-slate-100 text-slate-500'">{{ providerLabel(p) }}</span>
+          </div>
+          <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs mb-2.5">
+            <div class="flex justify-between gap-2"><span class="text-slate-400">註冊</span><span class="text-slate-500">{{ fmtDate(u.createdAt) }}</span></div>
+            <div class="flex justify-between gap-2"><span class="text-slate-400">最後登入</span><span class="text-slate-500">{{ fmtDate(u.lastSignInAt) }}</span></div>
+          </div>
+          <button @click="toggleAdmin(u)" :disabled="busyId === u.id || (u.id === user?.id && u.isAdmin)"
+            class="w-full px-2.5 py-1.5 text-xs font-medium rounded-lg border transition disabled:opacity-40 disabled:cursor-not-allowed"
+            :class="u.isAdmin ? 'text-slate-500 border-slate-200 hover:bg-slate-50' : 'text-indigo-600 border-indigo-200 hover:bg-indigo-50'">
+            {{ busyId === u.id ? '處理中…' : u.isAdmin ? '取消管理員' : '設為管理員' }}
+          </button>
+        </div>
+      </div>
+      </template>
 
       <!-- 分頁 -->
       <div v-if="totalPages > 1" class="flex items-center justify-between px-5 py-3 border-t border-slate-100">

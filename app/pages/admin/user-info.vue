@@ -100,7 +100,8 @@ const profitClass = (n: number) => n > 0 ? 'text-red-500' : n < 0 ? 'text-green-
       <div v-if="pending && !users.length" class="py-12 text-center text-sm text-slate-400 animate-pulse">載入中…</div>
       <div v-else-if="sortedUsers.length === 0" class="py-12 text-center text-sm text-slate-400">無符合的帳號</div>
 
-      <div v-else class="overflow-x-auto">
+      <template v-else>
+      <div class="hidden sm:block overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
             <tr class="bg-slate-50 border-b border-slate-100">
@@ -139,6 +140,19 @@ const profitClass = (n: number) => n > 0 ? 'text-red-500' : n < 0 ? 'text-green-
           </tbody>
         </table>
       </div>
+      <!-- 手機卡片 -->
+      <div class="sm:hidden divide-y divide-slate-100">
+        <div v-for="u in pagedUsers" :key="u.userId" class="p-4">
+          <p class="text-sm font-medium text-slate-700 break-all mb-2">{{ u.email }}<span v-if="u.holdingsCount === 0" class="ml-1.5 text-xs text-slate-300">（無持股）</span></p>
+          <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+            <div class="flex justify-between gap-2"><span class="text-slate-400">總成本</span><span class="tabular-nums text-slate-600">{{ money(u.totalCost) }}</span></div>
+            <div class="flex justify-between gap-2"><span class="text-slate-400">總市值</span><span class="tabular-nums text-slate-800 font-medium">{{ money(u.totalValue) }}</span></div>
+            <div class="flex justify-between gap-2"><span class="text-slate-400">未實現損益</span><span class="tabular-nums font-medium" :class="profitClass(u.unrealizedProfit)">{{ u.unrealizedProfit > 0 ? '+' : '' }}{{ money(u.unrealizedProfit) }}</span></div>
+            <div class="flex justify-between gap-2"><span class="text-slate-400">實現損益</span><span class="tabular-nums font-medium" :class="profitClass(u.realizedProfit)">{{ u.realizedProfit > 0 ? '+' : '' }}{{ money(u.realizedProfit) }}</span></div>
+          </div>
+        </div>
+      </div>
+      </template>
 
       <!-- 分頁 -->
       <div v-if="totalPages > 1" class="flex items-center justify-between px-5 py-3 border-t border-slate-100">
