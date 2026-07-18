@@ -25,6 +25,7 @@ function toggleTip(e: MouseEvent, text: string) {
   tipTimer = setTimeout(hideTip, 4000)
 }
 const { data: snapshots, refresh } = await useAppData<any[]>('/api/portfolio/snapshot', {}, DEMO_SNAPSHOTS)
+usePullToRefresh(refresh)
 const { data: holdings } = await useAppData<any>('/api/stockholdings/summary', { key: 'daily-summary' }, DEMO_SUMMARY)
 
 const allRows = computed(() => {

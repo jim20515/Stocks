@@ -3,6 +3,7 @@ import { h } from 'vue'
 
 const refreshKey = useState('portfolioRefreshKey', () => 0)
 const { data: summary, refresh } = await useAppData('/api/stockholdings/summary', { key: 'dashboard-summary' }, DEMO_SUMMARY)
+usePullToRefresh(refresh)
 
 watch(refreshKey, () => refresh())
 

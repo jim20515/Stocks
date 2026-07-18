@@ -7,6 +7,11 @@ const { $authFetch } = useNuxtApp()
 const sidebarOpen = ref(false)
 watch(route, () => { sidebarOpen.value = false })
 
+// 下拉刷新指示器狀態（各頁呼叫 usePullToRefresh 更新）
+const ptr = usePullToRefreshState()
+
+const toast = useToast()
+
 // ── XLS 匯入 ──────────────────────────────────────────────
 const xlsFileInput = ref<HTMLInputElement | null>(null)
 const showImportModal = ref(false)
@@ -242,6 +247,7 @@ async function confirmImport() {
     })
     refreshKey.value++
     showImportModal.value = false
+    toast.success(`已匯入 ${filtered.length} 筆持股`)
   } catch (error: any) {
     detectError.value = `匯入失敗：${getImportErrorMessage(error)}`
   } finally {
@@ -374,6 +380,7 @@ async function submitForm() {
     await ($authFetch as any)('/api/stockholdings', { method: 'POST', body: payload })
   }
   refreshKey.value++
+  toast.success(editingId.value ? '已儲存變更' : '已新增交易')
   closeModal()
 }
 
@@ -410,8 +417,24 @@ async function submitForm() {
       <div class="h-14 safe-bottom sm:hidden" aria-hidden="true" />
     </div>
 
+    <!-- 下拉刷新指示器（手機） -->
+    <div v-if="ptr.distance > 0 || ptr.refreshing"
+      class="sm:hidden fixed top-0 inset-x-0 z-40 flex justify-center pointer-events-none"
+      :style="{ transform: `translateY(${ptr.refreshing ? 64 : ptr.distance + 8}px)`, transition: (ptr.refreshing || ptr.distance === 0) ? 'transform 0.25s ease' : 'none' }">
+      <div class="w-9 h-9 rounded-full bg-white shadow-md border border-slate-200 flex items-center justify-center">
+        <svg class="w-4 h-4 text-indigo-500" :class="ptr.refreshing ? 'animate-spin' : ''"
+          :style="ptr.refreshing ? undefined : { transform: `rotate(${ptr.distance * 2.4}deg)` }"
+          fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+        </svg>
+      </div>
+    </div>
+
     <!-- 手機底部導覽列 -->
     <LayoutBottomNav @menu="sidebarOpen = true" />
+
+    <!-- 全域 Toast -->
+    <Toast />
 
     <!-- 隱藏的 XLS 檔案輸入 -->
     <input ref="xlsFileInput" type="file" accept=".xls,.xlsx,.csv" class="hidden" @change="onXlsSelected" />

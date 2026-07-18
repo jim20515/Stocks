@@ -4,8 +4,10 @@ const openEditModal = inject<(h: any) => void>('openEditModal', () => {})
 const openCopyModal = inject<(h: any) => void>('openCopyModal', () => {})
 const { authHeaders } = useAuth()
 const { isGuest, promptLogin } = useGuestGate()
+const toast = useToast()
 
 const { data: summary, refresh } = await useAppData('/api/stockholdings/summary', { key: 'stocks-summary' }, DEMO_SUMMARY)
+usePullToRefresh(refresh)
 
 watch(refreshKey, () => refresh())
 
@@ -99,6 +101,7 @@ function askRemove(id: number, name: string) {
     onOk: async () => {
       await $fetch(`/api/stockholdings/${id}`, { method: 'DELETE', headers: authHeaders.value as HeadersInit })
       await refresh()
+      toast.success('已刪除交易')
     },
   }
 }
@@ -112,6 +115,7 @@ function askRemoveAll() {
     onOk: async () => {
       await $fetch('/api/stockholdings/all', { method: 'DELETE', headers: authHeaders.value as HeadersInit })
       await refresh()
+      toast.success('已全部刪除')
     },
   }
 }

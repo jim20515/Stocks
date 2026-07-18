@@ -3,6 +3,7 @@ const refreshKey = useState('portfolioRefreshKey', () => 0)
 const { authHeaders } = useAuth()
 const { isGuest, promptLogin } = useGuestGate()
 const { data, refresh } = await useAppData('/api/portfolio/beta-summary', { key: 'beta-summary' }, DEMO_BETA)
+usePullToRefresh(refresh)
 
 watch(refreshKey, () => refresh())
 
