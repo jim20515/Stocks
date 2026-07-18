@@ -14,11 +14,12 @@ export default defineNuxtConfig({
     head: {
       htmlAttrs: { lang: 'zh-Hant' },
       meta: [
-        // viewport-fit=cover 讓內容延伸到瀏海/圓角區
-        { name: 'viewport', content: 'width=device-width, initial-scale=1, viewport-fit=cover' },
+        // viewport-fit=cover 延伸到瀏海/圓角；禁縮放（App 感）；鍵盤彈出時縮小視窗而非覆蓋
+        { name: 'viewport', content: 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content' },
         { name: 'theme-color', content: '#4f46e5' },
         { name: 'apple-mobile-web-app-capable', content: 'yes' },
-        { name: 'apple-mobile-web-app-status-bar-style', content: 'default' },
+        // black-translucent：狀態列沉浸，內容延伸到狀態列後方（配合 .safe-top）
+        { name: 'apple-mobile-web-app-status-bar-style', content: 'black-translucent' },
         { name: 'apple-mobile-web-app-title', content: '股票看板' },
       ],
       link: [
