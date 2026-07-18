@@ -264,9 +264,8 @@ const form = ref({ stockCode: '', stockName: '', shares: '', averageCost: '', co
 const refreshKey = useState('portfolioRefreshKey', () => 0)
 
 provide('refreshKey', refreshKey)
-provide('openEditModal', (holding: any) => {
-  if (isGuest.value) return promptLogin()
-  editingId.value = holding.id
+
+function fillFormFromHolding(holding: any) {
   const isSell = holding.shares < 0
   form.value = {
     stockCode: holding.stockCode,
@@ -282,6 +281,19 @@ provide('openEditModal', (holding: any) => {
   }
   lookupError.value = ''
   showModal.value = true
+}
+
+provide('openEditModal', (holding: any) => {
+  if (isGuest.value) return promptLogin()
+  editingId.value = holding.id
+  fillFormFromHolding(holding)
+})
+
+// 複製：把該筆資料帶進「新增交易」表單（editingId 保持 null → 儲存時為新增一筆）
+provide('openCopyModal', (holding: any) => {
+  if (isGuest.value) return promptLogin()
+  editingId.value = null
+  fillFormFromHolding(holding)
 })
 
 function today() {

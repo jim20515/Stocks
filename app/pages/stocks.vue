@@ -1,6 +1,7 @@
 <script setup lang="ts">
 const refreshKey = useState('portfolioRefreshKey', () => 0)
 const openEditModal = inject<(h: any) => void>('openEditModal', () => {})
+const openCopyModal = inject<(h: any) => void>('openCopyModal', () => {})
 const { authHeaders } = useAuth()
 const { isGuest, promptLogin } = useGuestGate()
 
@@ -366,14 +367,21 @@ async function refreshPrices() {
               </td>
               <td class="px-4 py-3.5">
                 <div class="flex items-center gap-2 justify-end">
-                  <button @click="openEditModal(h)"
+                  <button @click="openCopyModal(h)" title="複製到新增"
+                    class="p-1.5 rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 transition">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                  </button>
+                  <button @click="openEditModal(h)" title="修改"
                     class="p-1.5 rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 transition">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                         d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                     </svg>
                   </button>
-                  <button @click="askRemove(h.id, h.stockName)"
+                  <button @click="askRemove(h.id, h.stockName)" title="刪除"
                     class="p-1.5 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500 transition">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
