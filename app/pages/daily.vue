@@ -16,6 +16,14 @@ function showTip(e: MouseEvent, text: string) {
   tooltip.value = { text, x, y }
 }
 function hideTip() { tooltip.value = null }
+// 手機無 hover：點擊切換顯示，數秒後自動收起
+let tipTimer: any = null
+function toggleTip(e: MouseEvent, text: string) {
+  clearTimeout(tipTimer)
+  if (tooltip.value?.text === text) { hideTip(); return }
+  showTip(e, text)
+  tipTimer = setTimeout(hideTip, 4000)
+}
 const { data: snapshots, refresh } = await useAppData<any[]>('/api/portfolio/snapshot', {}, DEMO_SNAPSHOTS)
 const { data: holdings } = await useAppData<any>('/api/stockholdings/summary', { key: 'daily-summary' }, DEMO_SUMMARY)
 
@@ -313,33 +321,33 @@ async function refreshWithSnapshot() {
               <th class="text-right px-5 py-3 text-xs font-medium text-slate-500">總市值</th>
               <th class="text-right px-5 py-3 text-xs font-medium text-slate-500">
                 <span class="inline-flex items-center gap-1 justify-end">總成本
-                  <span class="formula-tip" @mouseover="showTip($event, '買入＋買入金額，賣出−當時均成本（WACC）')" @mouseleave="hideTip">?</span>
+                  <span class="formula-tip" @mouseover="showTip($event, '買入＋買入金額，賣出−當時均成本（WACC）')" @mouseleave="hideTip" @click.stop="toggleTip($event, '買入＋買入金額，賣出−當時均成本（WACC）')">?</span>
                 </span>
               </th>
               <th class="text-right px-5 py-3 text-xs font-medium text-slate-500">當日買賣</th>
               <th class="text-right px-5 py-3 text-xs font-medium text-slate-500">
                 <span class="inline-flex items-center gap-1 justify-end">當日漲跌
-                  <span class="formula-tip" @mouseover="showTip($event, '今日市值 − 昨日市值 − 當日買賣（純股價漲跌，不含資金進出）')" @mouseleave="hideTip">?</span>
+                  <span class="formula-tip" @mouseover="showTip($event, '今日市值 − 昨日市值 − 當日買賣（純股價漲跌，不含資金進出）')" @mouseleave="hideTip" @click.stop="toggleTip($event, '今日市值 − 昨日市值 − 當日買賣（純股價漲跌，不含資金進出）')">?</span>
                 </span>
               </th>
               <th class="text-right px-5 py-3 text-xs font-medium text-slate-500">
                 <span class="inline-flex items-center gap-1 justify-end">漲跌幅
-                  <span class="formula-tip" @mouseover="showTip($event, '當日漲跌 ÷ 昨日總市值 × 100%')" @mouseleave="hideTip">?</span>
+                  <span class="formula-tip" @mouseover="showTip($event, '當日漲跌 ÷ 昨日總市值 × 100%')" @mouseleave="hideTip" @click.stop="toggleTip($event, '當日漲跌 ÷ 昨日總市值 × 100%')">?</span>
                 </span>
               </th>
               <th class="text-right px-5 py-3 text-xs font-medium text-slate-500">
                 <span class="inline-flex items-center gap-1 justify-end">總漲跌
-                  <span class="formula-tip" @mouseover="showTip($event, '總市值 − 總成本（含未實現＋已實現損益）')" @mouseleave="hideTip">?</span>
+                  <span class="formula-tip" @mouseover="showTip($event, '總市值 − 總成本（含未實現＋已實現損益）')" @mouseleave="hideTip" @click.stop="toggleTip($event, '總市值 − 總成本（含未實現＋已實現損益）')">?</span>
                 </span>
               </th>
               <th class="text-right px-5 py-3 text-xs font-medium text-slate-500">
                 <span class="inline-flex items-center gap-1 justify-end">總漲跌幅
-                  <span class="formula-tip" @mouseover="showTip($event, '總漲跌 ÷ 總成本 × 100%')" @mouseleave="hideTip">?</span>
+                  <span class="formula-tip" @mouseover="showTip($event, '總漲跌 ÷ 總成本 × 100%')" @mouseleave="hideTip" @click.stop="toggleTip($event, '總漲跌 ÷ 總成本 × 100%')">?</span>
                 </span>
               </th>
               <th class="text-right px-5 py-3 text-xs font-medium text-slate-500">
                 <span class="inline-flex items-center gap-1 justify-end">累積獲利
-                  <span class="formula-tip" @mouseover="showTip($event, '每日漲跌的累積加總（純股價漲跌貢獻）')" @mouseleave="hideTip">?</span>
+                  <span class="formula-tip" @mouseover="showTip($event, '每日漲跌的累積加總（純股價漲跌貢獻）')" @mouseleave="hideTip" @click.stop="toggleTip($event, '每日漲跌的累積加總（純股價漲跌貢獻）')">?</span>
                 </span>
               </th>
             </tr>

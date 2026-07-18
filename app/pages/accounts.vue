@@ -170,10 +170,10 @@ async function saveEdit(id: number) {
         </template>
         <!-- 一般狀態 -->
         <template v-else>
-          <!-- 拖曳把手（漢堡三條線） -->
+          <!-- 拖曳把手（漢堡三條線，桌機用）-->
           <span
             @mousedown="handleGrabbed = true"
-            class="shrink-0 -ml-1 px-1 text-slate-300 hover:text-indigo-500 cursor-grab active:cursor-grabbing select-none transition"
+            class="hidden sm:inline-flex shrink-0 -ml-1 px-1 text-slate-300 hover:text-indigo-500 cursor-grab active:cursor-grabbing select-none transition"
             title="拖曳調整順序"
           >
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -181,6 +181,19 @@ async function saveEdit(id: number) {
             </svg>
           </span>
           <span class="flex-1 text-sm text-slate-700">{{ acc.name }}</span>
+          <!-- 上下移動（手機用，觸控友善）-->
+          <button @click="reorderAndSave(index, index - 1)" :disabled="index === 0" title="上移"
+            class="sm:hidden shrink-0 p-1 text-slate-300 hover:text-indigo-500 disabled:opacity-30 disabled:cursor-not-allowed transition">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" />
+            </svg>
+          </button>
+          <button @click="reorderAndSave(index, index + 1)" :disabled="index === accounts.length - 1" title="下移"
+            class="sm:hidden shrink-0 p-1 text-slate-300 hover:text-indigo-500 disabled:opacity-30 disabled:cursor-not-allowed transition">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
           <button @click="startEdit(acc)" class="text-slate-300 hover:text-indigo-400 transition" title="編輯">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
