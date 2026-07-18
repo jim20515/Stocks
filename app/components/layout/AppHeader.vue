@@ -92,6 +92,14 @@ function hideTip() { tooltip.value = null }
           </button>
         </template>
         <template v-if="route.path === '/backtest' || route.path === '/backtest/strategy'">
+          <!-- 手機：圖示 -->
+          <button @click="onUpdatePrices" :disabled="backtestUpdating" title="更新最新價格"
+            class="sm:hidden inline-flex items-center justify-center p-2 text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-60 transition">
+            <svg :class="backtestUpdating ? 'animate-spin' : ''" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0" />
+            </svg>
+          </button>
+          <!-- 桌機：文字 -->
           <button @click="onUpdatePrices" :disabled="backtestUpdating"
             @mouseenter="showTip($event, '更新所有資料庫股票最新價格')"
             @mouseleave="hideTip"

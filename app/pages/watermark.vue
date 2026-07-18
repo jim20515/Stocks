@@ -161,6 +161,7 @@ if (selected.value) await loadWatermark()
           </h3>
           <p class="text-xs text-slate-400 mt-0.5">以 ATH {{ result.watermarkPrice.toLocaleString() }} 為基準計算</p>
         </div>
+        <div class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
             <tr class="bg-slate-50 border-b border-slate-100">
@@ -191,6 +192,7 @@ if (selected.value) await loadWatermark()
             </tr>
           </tbody>
         </table>
+        </div>
 
         <div v-if="result.currentPrice" class="px-5 py-5 border-t border-slate-100">
           <p class="text-xs font-medium text-slate-500 mb-3">目前位置</p>

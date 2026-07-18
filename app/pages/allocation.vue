@@ -253,6 +253,7 @@ function goPage(p: number) {
       <div class="px-5 py-4 border-b border-slate-100">
         <h3 class="text-sm font-semibold text-slate-800">槓桿配置 目前 vs 目標</h3>
       </div>
+      <div class="overflow-x-auto">
       <table class="w-full text-sm">
         <thead>
           <tr class="bg-slate-50 border-b border-slate-100">
@@ -293,6 +294,7 @@ function goPage(p: number) {
           </tr>
         </tbody>
       </table>
+      </div>
     </div>
 
     <!-- 資產配置統計 -->

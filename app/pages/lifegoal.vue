@@ -184,7 +184,7 @@ const milestones = computed(() => {
             起始 {{ projection.settings.startInvestYear }} 年・{{ projection.settings.initialAge }} 歲・NT$ {{ fullMoney(projection.settings.initialAmount) }}・年化 {{ (projection.settings.expectedAnnualReturn * 100).toFixed(1) }}%
           </p>
         </div>
-        <div class="overflow-y-auto max-h-[520px]">
+        <div class="overflow-auto max-h-[520px]">
           <table class="w-full text-sm">
             <thead class="sticky top-0 bg-slate-50 z-10">
               <tr class="border-b border-slate-100">

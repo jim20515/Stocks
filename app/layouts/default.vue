@@ -581,9 +581,9 @@ async function submitForm() {
     <!-- 新增 / 編輯交易 Modal -->
     <Transition name="fade">
       <div v-if="showModal"
-        class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+        class="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
         @click.self="closeModal">
-        <div class="bg-white rounded-2xl w-full max-w-lg shadow-xl">
+        <div class="bg-white rounded-t-2xl sm:rounded-2xl w-full max-w-lg shadow-xl max-h-[90vh] overflow-y-auto">
           <div class="flex items-center justify-between p-6 border-b border-slate-100">
             <h2 class="text-base font-semibold text-slate-800">{{ editingId ? '編輯交易' : '新增交易' }}</h2>
             <button @click="closeModal" class="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 transition">
