@@ -300,6 +300,7 @@ provide('openCopyModal', (holding: any) => {
   if (isGuest.value) return promptLogin()
   editingId.value = null
   fillFormFromHolding(holding)
+  form.value.buyDate = today()
 })
 
 function today() {
