@@ -23,21 +23,37 @@ function isTokenExpired(token: string): boolean {
 export default defineNuxtRouteMiddleware(async (to) => {
   if (to.path === '/auth/callback' || to.path === '/reset-password') return
   const { token, user, refreshToken, clearSession } = useAuth()
-  // 訪客（無 token 或 token 過期）不再強制導向登入，改為以 guest 身分瀏覽（看範例 Demo / 工具）。
+
+  // 1. 若在登入頁：若已有有效 token 則導回首頁，否則放行
+  if (to.path === '/login') {
+    if (token.value && !isTokenExpired(token.value)) {
+      return navigateTo('/')
+    }
+    return
+  }
+
+  // 2. 若 access token 過期，嘗試無痛續期；若無 refresh token 或續期失敗，清 session 並強制導向登入頁
   if (token.value && isTokenExpired(token.value)) {
-    // access token 過期：若還有 refresh token，先嘗試無痛換發，成功就維持登入。
     if (refreshToken.value) {
       const ok = await useSessionRefresh().refresh()
-      if (!ok) return // 換發失敗（refresh token 也失效）→ 已清 session，以訪客身分繼續
+      if (!ok) {
+        clearSession()
+        return navigateTo('/login')
+      }
     } else {
-      // 沒有 refresh token（舊 session）→ 清掉壞憑證，避免帶去打 API。
       clearSession()
-      return
+      return navigateTo('/login')
     }
   }
-  // 無密碼註冊者第一次進來一定要先設定密碼，設好前不放行到其他頁（含登入頁）。
+
+  // 3. 若無 token（未登入），一律強制導向登入頁
+  if (!token.value) {
+    clearSession()
+    return navigateTo('/login')
+  }
+
+  // 4. 無密碼註冊者第一次進來一定要先設定密碼，設好前不放行到其他頁
   if (token.value && user.value?.needsPassword && to.path !== '/set-password') {
     return navigateTo('/set-password')
   }
-  if (to.path === '/login') return
 })

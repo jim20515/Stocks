@@ -43,6 +43,7 @@ function detectMapping(keys: string[]) {
 
 function triggerImport() {
   if (isGuest.value) return promptLogin()
+  loadAccounts()
   xlsFileInput.value?.click()
 }
 
@@ -256,7 +257,18 @@ async function confirmImport() {
 }
 
 // ── 帳戶別名 ──────────────────────────────────────────────
-const { data: accountList } = await useAppData<{ id: number; name: string }[]>('/api/accounts', {}, DEMO_ACCOUNTS)
+const { data: accountList, refresh: refreshAccounts } = await useAppData<{ id: number; name: string }[]>('/api/accounts', { key: 'layout-accounts' }, DEMO_ACCOUNTS)
+
+async function loadAccounts() {
+  try {
+    const list = await ($authFetch as any)('/api/accounts')
+    if (Array.isArray(list)) {
+      accountList.value = list
+    }
+  } catch {
+    await refreshAccounts?.()
+  }
+}
 
 // ──────────────────────────────────────────────────────────
 const showModal = ref(false)
@@ -270,6 +282,16 @@ const form = ref({ stockCode: '', stockName: '', shares: '', averageCost: '', co
 const refreshKey = useState('portfolioRefreshKey', () => 0)
 
 provide('refreshKey', refreshKey)
+
+watch(refreshKey, () => {
+  loadAccounts()
+})
+
+watch(showModal, async (open) => {
+  if (open) {
+    await loadAccounts()
+  }
+})
 
 function fillFormFromHolding(holding: any) {
   const isSell = holding.shares < 0
@@ -289,16 +311,18 @@ function fillFormFromHolding(holding: any) {
   showModal.value = true
 }
 
-provide('openEditModal', (holding: any) => {
+provide('openEditModal', async (holding: any) => {
   if (isGuest.value) return promptLogin()
   editingId.value = holding.id
+  await loadAccounts()
   fillFormFromHolding(holding)
 })
 
 // 複製：把該筆資料帶進「新增交易」表單（editingId 保持 null → 儲存時為新增一筆）
-provide('openCopyModal', (holding: any) => {
+provide('openCopyModal', async (holding: any) => {
   if (isGuest.value) return promptLogin()
   editingId.value = null
+  await loadAccounts()
   fillFormFromHolding(holding)
   form.value.buyDate = today()
 })
@@ -307,8 +331,9 @@ function today() {
   return new Date().toISOString().slice(0, 10)
 }
 
-function openModal() {
+async function openModal() {
   if (isGuest.value) return promptLogin()
+  await loadAccounts()
   showModal.value = true
 }
 

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 const { authHeaders } = useAuth()
 const { isGuest, promptLogin } = useGuestGate()
+const refreshKey = useState('portfolioRefreshKey', () => 0)
 
 const { data: accounts, refresh } = await useAppData<{ id: number; name: string }[]>('/api/accounts', {}, DEMO_ACCOUNTS)
 
@@ -55,9 +56,11 @@ async function reorderAndSave(from: number, to: number) {
       body: { ids: list.map(a => a.id) },
     })
     await refresh()
+    refreshKey.value++
   } catch (e: any) {
     error.value = e?.data?.message ?? '排序儲存失敗'
     await refresh()               // 失敗則還原成伺服器順序
+    refreshKey.value++
   }
 }
 
@@ -74,6 +77,7 @@ async function addAccount() {
     })
     newName.value = ''
     await refresh()
+    refreshKey.value++
   } catch (e: any) {
     error.value = e?.data?.message ?? '新增失敗'
   } finally {
@@ -89,6 +93,7 @@ async function deleteAccount(id: number) {
     headers: authHeaders.value as HeadersInit,
   })
   await refresh()
+  refreshKey.value++
 }
 
 function startEdit(acc: { id: number; name: string }) {
@@ -111,6 +116,7 @@ async function saveEdit(id: number) {
   })
   editingId.value = null
   await refresh()
+  refreshKey.value++
 }
 </script>
 

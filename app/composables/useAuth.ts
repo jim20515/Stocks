@@ -1,7 +1,5 @@
 export function useAuth() {
-  const secureCookie = import.meta.client
-    ? window.location.protocol === 'https:'
-    : process.env.NODE_ENV === 'production'
+  const secureCookie = useRequestURL().protocol === 'https:'
 
   const token = useCookie<string | null>('sb_token', {
     maxAge: 60 * 60 * 24 * 7, // 7 天
