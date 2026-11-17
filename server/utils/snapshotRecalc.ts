@@ -145,57 +145,60 @@ export async function recalculateSnapshots(
     const d = snap.date
     const subHoldings = holdingsList.filter(h => h.buy_date <= d)
 
-    // WACC runningMap
-    const runningMap: Record<string, { totalCost: number; totalShares: number }> = {}
+    // 按帳戶分組計算 WACC（與 summary / snapshot.post API 相同邏輯）
+    const runningMap: Record<string, Record<string, { totalCost: number; totalShares: number }>> = {}
     for (const h of subHoldings) {
       const code = h.stock_code.toUpperCase()
-      if (!runningMap[code]) runningMap[code] = { totalCost: 0, totalShares: 0 }
+      const acct = h.account ?? ''
+      if (!runningMap[acct]) runningMap[acct] = {}
+      if (!runningMap[acct][code]) runningMap[acct][code] = { totalCost: 0, totalShares: 0 }
       if (h.shares > 0) {
-        runningMap[code].totalCost += Number(h.average_cost) * h.shares
-        runningMap[code].totalShares += h.shares
+        runningMap[acct][code].totalCost += Number(h.average_cost) * h.shares
+        runningMap[acct][code].totalShares += h.shares
       } else {
-        const { totalCost, totalShares } = runningMap[code]
+        const { totalCost, totalShares } = runningMap[acct][code]
         const wacc = totalShares > 0 ? totalCost / totalShares : Number(h.average_cost)
         const abs = Math.abs(h.shares)
-        runningMap[code].totalCost = Math.max(0, totalCost - wacc * abs)
-        runningMap[code].totalShares = Math.max(0, totalShares - abs)
+        runningMap[acct][code].totalCost = Math.max(0, totalCost - wacc * abs)
+        runningMap[acct][code].totalShares = Math.max(0, totalShares - abs)
       }
     }
 
-    const netSharesMap: Record<string, number> = {}
-    for (const h of subHoldings) {
-      const code = h.stock_code.toUpperCase()
-      netSharesMap[code] = (netSharesMap[code] ?? 0) + Number(h.shares)
+    // 收集所有有淨持股的代號
+    const activeCodesSet = new Set<string>()
+    for (const codeMap of Object.values(runningMap)) {
+      for (const [code, { totalShares }] of Object.entries(codeMap)) {
+        if (totalShares > 0) activeCodesSet.add(code)
+      }
     }
-
-    const activeCodes = Object.keys(netSharesMap).filter(c => netSharesMap[c] > 0)
+    const activeCodes = [...activeCodesSet]
     if (!activeCodes.length) continue
 
     // 取得當日價格
     let prices: Record<string, number> = {}
-    let prevPrices: Record<string, number | null> = {}
 
     if (d === todayStr) {
       const infos = await fetchPricesWithChange(activeCodes)
       for (const c of activeCodes) {
         prices[c] = infos[c]?.price ?? 0
-        prevPrices[c] = infos[c]?.prevClose ?? null
       }
     } else {
       for (const c of activeCodes) {
         const p = await getHistoricalClosePrice(client, c, d)
-        prices[c] = p ?? (runningMap[c]?.totalShares > 0 ? runningMap[c].totalCost / runningMap[c].totalShares : 0)
+        prices[c] = p ?? 0
       }
     }
 
     let totalValue = 0
     let totalCost = 0
-    for (const c of activeCodes) {
-      const sh = netSharesMap[c]
-      const wacc = runningMap[c]?.totalShares > 0 ? runningMap[c].totalCost / runningMap[c].totalShares : 0
-      const price = prices[c] > 0 ? prices[c] : wacc
-      totalValue += price * sh
-      totalCost += wacc * sh
+    for (const codeMap of Object.values(runningMap)) {
+      for (const [code, { totalCost: cost, totalShares: shares }] of Object.entries(codeMap)) {
+        if (shares <= 0) continue
+        const wacc = cost / shares
+        const price = (prices[code] && prices[code] > 0) ? prices[code] : wacc
+        totalValue += price * shares
+        totalCost += wacc * shares
+      }
     }
 
     totalValue = Math.round(totalValue)
