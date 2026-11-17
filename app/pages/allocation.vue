@@ -3,9 +3,10 @@ const refreshKey = useState('portfolioRefreshKey', () => 0)
 const { authHeaders } = useAuth()
 const { isGuest, promptLogin } = useGuestGate()
 const { data, refresh } = await useAppData('/api/portfolio/beta-summary', { key: 'beta-summary' }, DEMO_BETA)
+const { data: accData, refresh: refreshAcc } = await useAppData<any>('/api/portfolio/account-holdings', { key: 'account-holdings' }, null)
 usePullToRefresh(refresh)
 
-watch(refreshKey, () => refresh())
+watch(refreshKey, () => { refresh(); refreshAcc() })
 
 const d = computed(() => data.value as any)
 
@@ -59,7 +60,7 @@ function money(v: any) { return Number(v).toLocaleString('zh-TW') }
 const refreshing = ref(false)
 async function refreshPrices() {
   refreshing.value = true
-  try { await refresh() } finally { refreshing.value = false }
+  try { await Promise.all([refresh(), refreshAcc()]) } finally { refreshing.value = false }
 }
 
 const betaDiffClass = computed(() => {
@@ -521,6 +522,111 @@ function goPage(p: number) {
             class="px-2 py-1 text-xs rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition">›</button>
           <button @click="goPage(totalPages)" :disabled="currentPage === totalPages"
             class="px-2 py-1 text-xs rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition">»</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 各帳號持股明細 -->
+    <div v-if="accData?.accounts?.length" class="space-y-4">
+      <div class="px-1">
+        <h3 class="text-sm font-semibold text-slate-800">各帳號持股明細</h3>
+        <p class="text-xs text-slate-400 mt-0.5">依帳號分組，各帳號的均成本與損益獨立計算（同一檔股票在不同帳號為獨立部位）</p>
+      </div>
+
+      <div v-for="acc in accData.accounts" :key="acc.account" class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+        <div class="flex flex-wrap items-center justify-between gap-2 px-5 py-4 border-b border-slate-100">
+          <div class="flex items-center gap-2">
+            <h4 class="text-sm font-bold text-slate-800">{{ acc.account }}</h4>
+            <span class="px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 text-slate-500">{{ acc.items.length }} 檔</span>
+          </div>
+          <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+            <span class="text-slate-400">市值 <span class="font-semibold text-slate-800">{{ money(acc.subtotal.marketValue) }}</span></span>
+            <span class="text-slate-400">總成本 <span class="font-medium text-slate-600">{{ money(acc.subtotal.cost) }}</span></span>
+            <span class="text-slate-400">損益 <span class="font-semibold" :class="pnlClass(acc.subtotal.profit)">{{ signMoney(acc.subtotal.profit) }}</span></span>
+            <span class="font-medium" :class="pnlClass(acc.subtotal.profitPct)">{{ pctSigned(acc.subtotal.profitPct) }}</span>
+          </div>
+        </div>
+
+        <!-- 桌機表格 -->
+        <div class="hidden sm:block overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="bg-slate-50 border-b border-slate-100">
+                <th class="text-left px-5 py-2.5 text-xs font-medium text-slate-500">代號 / 名稱</th>
+                <th class="text-right px-4 py-2.5 text-xs font-medium text-slate-500">股數</th>
+                <th class="text-right px-4 py-2.5 text-xs font-medium text-slate-500">現價</th>
+                <th class="text-right px-4 py-2.5 text-xs font-medium text-slate-500">均成本</th>
+                <th class="text-right px-4 py-2.5 text-xs font-medium text-slate-500">市值</th>
+                <th class="text-right px-4 py-2.5 text-xs font-medium text-slate-500">損益</th>
+                <th class="text-right px-4 py-2.5 text-xs font-medium text-slate-500">損益%</th>
+                <th class="text-right px-4 py-2.5 text-xs font-medium text-slate-500">帳號內佔比</th>
+                <th class="text-right px-4 py-2.5 text-xs font-medium text-slate-500">Beta 貢獻</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-50">
+              <tr v-for="h in acc.items" :key="h.stockCode" class="hover:bg-slate-50/50 transition">
+                <td class="px-5 py-3">
+                  <div class="flex items-center gap-2.5">
+                    <div class="w-7 h-7 rounded-full bg-indigo-50 flex items-center justify-center shrink-0">
+                      <span class="text-[10px] font-bold text-indigo-600">{{ h.stockCode.slice(0, 2) }}</span>
+                    </div>
+                    <div>
+                      <p class="font-semibold text-slate-800">{{ h.stockCode }}</p>
+                      <p class="text-xs text-slate-400">{{ h.stockName }}</p>
+                    </div>
+                  </div>
+                </td>
+                <td class="px-4 py-3 text-right text-slate-600">{{ h.shares.toLocaleString() }}</td>
+                <td class="px-4 py-3 text-right text-slate-700">{{ h.currentPrice != null ? h.currentPrice.toLocaleString() : '—' }}</td>
+                <td class="px-4 py-3 text-right text-slate-500">{{ h.avgCost ? h.avgCost.toLocaleString() : '—' }}</td>
+                <td class="px-4 py-3 text-right font-medium text-slate-800">{{ money(h.marketValue) }}</td>
+                <td class="px-4 py-3 text-right font-medium" :class="pnlClass(h.profit)">{{ signMoney(h.profit) }}</td>
+                <td class="px-4 py-3 text-right font-medium" :class="pnlClass(h.profitPct)">{{ pctSigned(h.profitPct) }}</td>
+                <td class="px-4 py-3 text-right text-slate-600">{{ pct(h.accountShare) }}</td>
+                <td class="px-4 py-3 text-right font-mono font-bold text-indigo-600">{{ h.betaContrib.toFixed(4) }}</td>
+              </tr>
+            </tbody>
+            <tfoot>
+              <tr class="bg-indigo-50/60 font-semibold text-slate-700">
+                <td class="px-5 py-2.5">{{ acc.account }} 小計</td>
+                <td class="px-4 py-2.5 text-right text-slate-600">{{ acc.subtotal.itemCount }} 檔</td>
+                <td class="px-4 py-2.5"></td>
+                <td class="px-4 py-2.5"></td>
+                <td class="px-4 py-2.5 text-right text-slate-800">{{ money(acc.subtotal.marketValue) }}</td>
+                <td class="px-4 py-2.5 text-right" :class="pnlClass(acc.subtotal.profit)">{{ signMoney(acc.subtotal.profit) }}</td>
+                <td class="px-4 py-2.5 text-right" :class="pnlClass(acc.subtotal.profitPct)">{{ pctSigned(acc.subtotal.profitPct) }}</td>
+                <td class="px-4 py-2.5 text-right text-slate-500">100%</td>
+                <td class="px-4 py-2.5"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+
+        <!-- 手機卡片 -->
+        <div class="sm:hidden divide-y divide-slate-100">
+          <div v-for="h in acc.items" :key="h.stockCode" class="p-4">
+            <div class="flex items-start justify-between gap-2 mb-2">
+              <div class="flex items-center gap-2.5 min-w-0">
+                <div class="w-7 h-7 rounded-full bg-indigo-50 flex items-center justify-center shrink-0"><span class="text-[10px] font-bold text-indigo-600">{{ h.stockCode.slice(0,2) }}</span></div>
+                <div class="min-w-0">
+                  <p class="font-semibold text-slate-800">{{ h.stockCode }}</p>
+                  <p class="text-xs text-slate-400 truncate">{{ h.stockName }}</p>
+                </div>
+              </div>
+              <div class="text-right shrink-0">
+                <p class="font-medium" :class="pnlClass(h.profit)">{{ signMoney(h.profit) }}</p>
+                <p class="text-xs" :class="pnlClass(h.profitPct)">{{ pctSigned(h.profitPct) }}</p>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+              <div class="flex justify-between gap-2"><span class="text-slate-400">股數</span><span class="text-slate-600">{{ h.shares.toLocaleString() }}</span></div>
+              <div class="flex justify-between gap-2"><span class="text-slate-400">現價</span><span class="text-slate-700">{{ h.currentPrice != null ? h.currentPrice.toLocaleString() : '—' }}</span></div>
+              <div class="flex justify-between gap-2"><span class="text-slate-400">均成本</span><span class="text-slate-500">{{ h.avgCost ? h.avgCost.toLocaleString() : '—' }}</span></div>
+              <div class="flex justify-between gap-2"><span class="text-slate-400">市值</span><span class="text-slate-800 font-medium">{{ money(h.marketValue) }}</span></div>
+              <div class="flex justify-between gap-2"><span class="text-slate-400">帳號內佔比</span><span class="text-slate-600">{{ pct(h.accountShare) }}</span></div>
+              <div class="flex justify-between gap-2"><span class="text-slate-400">Beta 貢獻</span><span class="font-mono font-bold text-indigo-600">{{ h.betaContrib.toFixed(4) }}</span></div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
