@@ -1,4 +1,5 @@
 import { getSplitById, updateSplitStatus } from '~~/server/utils/splitStorage'
+import { restoreSnapshots } from '~~/server/utils/snapshotRecalc'
 
 export default defineEventHandler(async (event) => {
   const userId = await requireUser(event)
@@ -30,22 +31,19 @@ export default defineEventHandler(async (event) => {
 
     if (!fetchErr && currentHoldings?.length) {
       const holdingMap = new Map(snapshotHoldings.map(s => [s.id, s]))
-      const restoredHoldings = currentHoldings.map((ch: any) => {
-        const snap = holdingMap.get(ch.id)
-        if (!snap) return ch
-        return {
-          ...ch,
-          shares: snap.shares,
-          average_cost: snap.average_cost,
+      // 同 apply：id 為 GENERATED ALWAYS identity，只能逐筆 update，不可 upsert 帶 id。
+      for (const ch of currentHoldings) {
+        const snap: any = holdingMap.get(ch.id)
+        if (!snap) continue
+        const { error: updateErr } = await client
+          .from('stock_holdings')
+          .update({ shares: snap.shares, average_cost: snap.average_cost })
+          .eq('id', ch.id)
+          .eq('user_id', userId)
+
+        if (updateErr) {
+          throw createError({ statusCode: 500, message: `還原持股失敗（單據 ${ch.id}）：${updateErr.message}` })
         }
-      })
-
-      const { error: upsertErr } = await client
-        .from('stock_holdings')
-        .upsert(restoredHoldings)
-
-      if (upsertErr) {
-        throw createError({ statusCode: 500, message: `還原持股失敗：${upsertErr.message}` })
       }
     }
   }
@@ -60,25 +58,38 @@ export default defineEventHandler(async (event) => {
 
     if (!pError && prices?.length) {
       const r = Number(record.ratio)
+      // 移除 id（identity 欄位不可寫入），以 (stock_code,date) 為衝突鍵 upsert
       const restoredPrices = prices.map((p: any) => ({
-        ...p,
+        stock_code: p.stock_code,
+        date: p.date,
         close_price: Math.round(Number(p.close_price) * r * 100) / 100,
       }))
 
       const BATCH_SIZE = 500
       for (let i = 0; i < restoredPrices.length; i += BATCH_SIZE) {
         const chunk = restoredPrices.slice(i, i + BATCH_SIZE)
-        await client.from('stock_daily_prices').upsert(chunk)
+        await client.from('stock_daily_prices').upsert(chunk, { onConflict: 'stock_code,date' })
       }
     }
   }
 
-  // 4. 更新狀態為 reverted
+  // 4. 若有儲存原始快照，反向還原快照數值
+  const savedSnapshots = record.snapshot_data?.snapshots || []
+  if (savedSnapshots.length > 0) {
+    try {
+      await restoreSnapshots(client, userId, savedSnapshots)
+    } catch (err: any) {
+      console.error('[split] Snapshot restore error:', err?.message || err)
+    }
+  }
+
+  // 5. 更新狀態為 reverted
   await updateSplitStatus(client, userId, splitId, 'reverted')
 
   return {
     ok: true,
-    message: `已成功還原 ${record.stock_code} 的 1 拆 ${record.ratio} 分割設定！`,
+    message: `已成功還原 ${record.stock_code} 的 1 拆 ${record.ratio} 分割設定！` + (savedSnapshots.length > 0 ? ` 並同步還原 ${savedSnapshots.length} 筆歷史資產快照。` : ''),
     splitId: record.id,
+    snapshotsRestoredCount: savedSnapshots.length,
   }
 })

@@ -6,10 +6,11 @@ export default defineEventHandler(async (event) => {
   const client = useDb(token)
 
   const body = await readBody(event)
-  const { stockCode, splitDate, ratio, adjustDailyPrices } = body ?? {}
+  const { stockCode, splitDate, resumeDate, ratio, adjustDailyPrices } = body ?? {}
 
   const code = normalizeStockCode(stockCode)
   const sDate = normalizeDate(splitDate, '分割基準日')
+  const rDate = resumeDate ? normalizeDate(resumeDate, '新股恢復交易日') : null
   const r = finiteNumber(ratio, '分割倍數', 0.01, 1000)
 
   // 查詢目前使用者符合條件的持股
@@ -69,11 +70,20 @@ export default defineEventHandler(async (event) => {
     dailyPricesCount = count || 0
   }
 
+  // 試算受影響的每日快照筆數（從恢復交易日或基準日起）
+  const effectiveResumeDate = rDate || sDate
+  const { count: snapshotsCount } = await client
+    .from('portfolio_daily_snapshot')
+    .select('date', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .gte('date', effectiveResumeDate)
+
   return {
     ok: true,
     stockCode: code,
     stockName,
     splitDate: sDate,
+    resumeDate: rDate,
     ratio: r,
     holdingsCount: holdingsList.length,
     currentShares,
@@ -81,6 +91,7 @@ export default defineEventHandler(async (event) => {
     currentCost: Math.round(currentCost),
     newAverageCostPreview,
     dailyPricesCount,
+    snapshotsCount: snapshotsCount || 0,
     sampleHoldings,
   }
 })

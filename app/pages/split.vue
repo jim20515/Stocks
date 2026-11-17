@@ -12,6 +12,7 @@ interface SplitRecord {
   stock_code: string
   stock_name: string
   split_date: string
+  resume_date?: string | null
   ratio: number
   adjust_daily_prices: boolean
   holdings_count: number
@@ -25,6 +26,7 @@ interface SplitPreview {
   stockCode: string
   stockName: string
   splitDate: string
+  resumeDate?: string | null
   ratio: number
   holdingsCount: number
   currentShares: number
@@ -32,6 +34,7 @@ interface SplitPreview {
   currentCost: number
   newAverageCostPreview: number
   dailyPricesCount: number
+  snapshotsCount?: number
   sampleHoldings: Array<{
     id: number
     account: string | null
@@ -48,6 +51,7 @@ const form = ref({
   stockCode: '00662',
   stockName: '富邦NASDAQ',
   splitDate: '2026-11-10',
+  resumeDate: '',
   ratio: 5,
   adjustDailyPrices: true,
 })
@@ -128,6 +132,7 @@ async function handlePreview() {
       body: {
         stockCode: form.value.stockCode.trim(),
         splitDate: form.value.splitDate,
+        resumeDate: form.value.resumeDate ? form.value.resumeDate : undefined,
         ratio: Number(form.value.ratio),
         adjustDailyPrices: form.value.adjustDailyPrices,
       },
@@ -162,6 +167,7 @@ async function executeApply() {
         stockCode: form.value.stockCode.trim(),
         stockName: form.value.stockName,
         splitDate: form.value.splitDate,
+        resumeDate: form.value.resumeDate ? form.value.resumeDate : undefined,
         ratio: Number(form.value.ratio),
         adjustDailyPrices: form.value.adjustDailyPrices,
       },
@@ -262,7 +268,7 @@ async function executeRevert() {
         </div>
       </div>
 
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <!-- 欄位 1：股票代號 -->
         <div>
           <label class="block text-xs font-medium text-slate-700 mb-1">
@@ -290,10 +296,24 @@ async function executeRevert() {
             class="w-full px-3 py-2 text-base rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             @change="previewData = null"
           />
-          <p class="text-[11px] text-slate-400 mt-1">基準日（含）前的買入單據與歷史收盤價受影響</p>
+          <p class="text-[11px] text-slate-400 mt-1">基準日（含）前的買入單據受分割影響</p>
         </div>
 
-        <!-- 欄位 3：分割倍數 -->
+        <!-- 欄位 3：新股恢復交易日（選填） -->
+        <div>
+          <label class="block text-xs font-medium text-slate-700 mb-1">
+            新股恢復交易日 <span class="text-slate-400 text-[11px] font-normal">(選填)</span>
+          </label>
+          <input
+            v-model="form.resumeDate"
+            type="date"
+            class="w-full px-3 py-2 text-base rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            @change="previewData = null"
+          />
+          <p class="text-[11px] text-slate-400 mt-1">停牌結束日。系統依此校正快照避免停牌跳水</p>
+        </div>
+
+        <!-- 欄位 4：分割倍數 -->
         <div>
           <label class="block text-xs font-medium text-slate-700 mb-1">
             分割倍數 (1 拆 N) <span class="text-red-500">*</span>
@@ -358,7 +378,11 @@ async function executeRevert() {
               </span>
             </h3>
             <p class="text-xs text-slate-500 mt-0.5">
-              基準日：{{ previewData.splitDate }} ｜ 影響持股單據：{{ previewData.holdingsCount }} 筆 ｜ 影響歷史日線：{{ previewData.dailyPricesCount }} 筆
+              基準日：{{ previewData.splitDate }} ｜
+              復牌日：{{ previewData.resumeDate || '同基準日' }} ｜
+              影響持股單據：{{ previewData.holdingsCount }} 筆 ｜
+              連動校正快照：{{ previewData.snapshotsCount ?? 0 }} 筆 ｜
+              影響歷史日線：{{ previewData.dailyPricesCount }} 筆
             </p>
           </div>
 
@@ -448,7 +472,7 @@ async function executeRevert() {
           <thead class="text-slate-400 border-b border-slate-200 bg-slate-50/50">
             <tr>
               <th class="py-2.5 px-3">股票</th>
-              <th class="py-2.5 px-3">基準日</th>
+              <th class="py-2.5 px-3">基準日 / 復牌日</th>
               <th class="py-2.5 px-3">分割倍數</th>
               <th class="py-2.5 px-3">影響範圍</th>
               <th class="py-2.5 px-3">執行時間</th>
@@ -462,7 +486,10 @@ async function executeRevert() {
                 <span class="font-bold mr-1">{{ rec.stock_code }}</span>
                 <span class="text-slate-500 font-normal">{{ rec.stock_name }}</span>
               </td>
-              <td class="py-3 px-3">{{ rec.split_date }}</td>
+              <td class="py-3 px-3">
+                <div>{{ rec.split_date }}</div>
+                <div v-if="rec.resume_date" class="text-[11px] text-slate-400">復牌: {{ rec.resume_date }}</div>
+              </td>
               <td class="py-3 px-3 font-semibold text-indigo-600">1 拆 {{ rec.ratio }}</td>
               <td class="py-3 px-3 text-slate-500">
                 持股 {{ rec.holdings_count }} 筆 / 日線 {{ rec.daily_prices_count }} 筆
@@ -512,7 +539,10 @@ async function executeRevert() {
           </div>
 
           <div class="grid grid-cols-2 gap-2 text-xs text-slate-500">
-            <div>基準日：<span class="text-slate-700">{{ rec.split_date }}</span></div>
+            <div>
+              基準日：<span class="text-slate-700">{{ rec.split_date }}</span>
+              <span v-if="rec.resume_date" class="text-slate-400 block text-[10px]">復牌 {{ rec.resume_date }}</span>
+            </div>
             <div>倍數：<span class="text-indigo-600 font-semibold">1 拆 {{ rec.ratio }}</span></div>
             <div class="col-span-2">
               影響筆數：持股 {{ rec.holdings_count }} 筆 / 日線 {{ rec.daily_prices_count }} 筆
@@ -548,10 +578,12 @@ async function executeRevert() {
           <li>影響持股單據：<b>{{ previewData?.holdingsCount }}</b> 筆（基準日 {{ form.splitDate }} 含以前）</li>
           <li>總持有股數：由 <b>{{ fmtNum(previewData?.currentShares) }}</b> 變為 <b>{{ fmtNum(previewData?.newShares) }}</b> 股</li>
           <li>平均成本：由加權成本調降為約 <b>${{ previewData?.newAverageCostPreview }}</b> 元</li>
+          <li>恢復交易日：<b>{{ previewData?.resumeDate ? `${previewData.resumeDate}（自動校正快照）` : '未指定（以基準日起算）' }}</b></li>
+          <li>每日快照校正：<b>{{ (previewData?.snapshotsCount || 0) > 0 ? `自動校正 ${previewData?.snapshotsCount} 筆快照（從 ${previewData?.resumeDate || form.splitDate} 起）` : '無受影響快照' }}</b></li>
           <li>歷史日收盤價：<b>{{ form.adjustDailyPrices ? `同步還原 ${previewData?.dailyPricesCount} 筆收盤價` : '不更動' }}</b></li>
         </ul>
         <div class="p-3 bg-indigo-50 text-indigo-700 rounded-lg text-xs">
-          提示：執行後若發現數值有誤，可隨時在紀錄區點擊「一鍵還原」完全回復。
+          提示：執行後系統將自動校正快照，若發現數值有誤，可隨時在紀錄區點擊「一鍵還原」完全回復。
         </div>
       </div>
       <template #footer>
@@ -586,10 +618,10 @@ async function executeRevert() {
           確定要還原 {{ targetRevertRecord.stock_code }} 的 1 拆 {{ targetRevertRecord.ratio }} 分割嗎？
         </p>
         <div class="p-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg">
-          系統將依照該次分割儲存的原始快照資料，將受影響的持股單據股數與均價回復至分割前的數值；若當初有同步分割歷史日線價格，亦會將歷史價格乘回原本水平。
+          系統將依照該次分割儲存的原始快照資料，將受影響的持股單據股數與均價回復至分割前的數值；若當初有同步分割歷史日線價格或校正每日資產快照，亦會將數值乘回與還原至原始水平。
         </div>
         <p class="text-[11px] text-slate-400">
-          執行時間：{{ fmtDateTime(targetRevertRecord.created_at) }} ｜ 基準日：{{ targetRevertRecord.split_date }}
+          執行時間：{{ fmtDateTime(targetRevertRecord.created_at) }} ｜ 基準日：{{ targetRevertRecord.split_date }} <span v-if="targetRevertRecord.resume_date">｜ 復牌日：{{ targetRevertRecord.resume_date }}</span>
         </p>
       </div>
       <template #footer>

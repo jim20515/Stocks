@@ -7,6 +7,7 @@ export interface SplitRecord {
   stock_code: string
   stock_name: string
   split_date: string
+  resume_date?: string | null
   ratio: number
   adjust_daily_prices: boolean
   holdings_count: number
@@ -15,6 +16,15 @@ export interface SplitRecord {
   snapshot_data: {
     holdings: Array<{ id: number; shares: number; average_cost: number }>
     dailyPricesCount?: number
+    resume_date?: string | null
+    snapshots?: Array<{
+      date: string
+      total_value: number
+      total_cost: number
+      daily_change: number | null
+      daily_change_pct: number | null
+      daily_trade_amount: number | null
+    }>
   }
   created_at: string
   reverted_at?: string | null
@@ -50,31 +60,69 @@ export async function listSplits(client: any, userId: string): Promise<SplitReco
       .order('created_at', { ascending: false })
 
     if (!error && Array.isArray(data)) {
-      return data
+      return data.map((r: any) => ({
+        ...r,
+        resume_date: r.resume_date ?? r.snapshot_data?.resume_date ?? null,
+      }))
     }
   } catch {}
 
   // Fallback
   const all = readFallbackSplits()
-  return all.filter(r => r.user_id === userId).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+  return all
+    .filter(r => r.user_id === userId)
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .map(r => ({
+      ...r,
+      resume_date: r.resume_date ?? r.snapshot_data?.resume_date ?? null,
+    }))
 }
 
 export async function saveSplitRecord(client: any, record: Omit<SplitRecord, 'id' | 'created_at'>): Promise<SplitRecord> {
   const now = new Date().toISOString()
   let savedRecord: SplitRecord | null = null
 
+  // 確保 snapshot_data 內也同步存一份 resume_date，即使 DB 無欄位也能永久保存
+  const enrichedRecord = {
+    ...record,
+    snapshot_data: {
+      ...record.snapshot_data,
+      resume_date: record.resume_date ?? null,
+    },
+  }
+
   try {
+    const insertPayload: any = {
+      ...enrichedRecord,
+      created_at: now,
+    }
+
     const { data, error } = await client
       .from('stock_splits')
-      .insert({
-        ...record,
-        created_at: now,
-      })
+      .insert(insertPayload)
       .select()
       .single()
 
     if (!error && data) {
-      savedRecord = data
+      savedRecord = {
+        ...data,
+        resume_date: data.resume_date ?? enrichedRecord.resume_date,
+      }
+    } else if (error && (error.message?.includes('resume_date') || error.code === '42703')) {
+      // 若 DB 尚未套用 013 migration (無 resume_date 欄位)，移除該鍵後重試
+      const { resume_date, ...safePayload } = insertPayload
+      const { data: retryData, error: retryErr } = await client
+        .from('stock_splits')
+        .insert(safePayload)
+        .select()
+        .single()
+
+      if (!retryErr && retryData) {
+        savedRecord = {
+          ...retryData,
+          resume_date: enrichedRecord.resume_date,
+        }
+      }
     }
   } catch {}
 
@@ -82,7 +130,7 @@ export async function saveSplitRecord(client: any, record: Omit<SplitRecord, 'id
     const all = readFallbackSplits()
     const newId = Date.now()
     savedRecord = {
-      ...record,
+      ...enrichedRecord,
       id: newId,
       created_at: now,
     }
@@ -107,11 +155,21 @@ export async function getSplitById(client: any, userId: string, id: string | num
       .eq('user_id', userId)
       .single()
 
-    if (!error && data) return data
+    if (!error && data) {
+      return {
+        ...data,
+        resume_date: data.resume_date ?? data.snapshot_data?.resume_date ?? null,
+      }
+    }
   } catch {}
 
   const all = readFallbackSplits()
-  return all.find(r => String(r.id) === String(id) && r.user_id === userId) ?? null
+  const found = all.find(r => String(r.id) === String(id) && r.user_id === userId)
+  if (!found) return null
+  return {
+    ...found,
+    resume_date: found.resume_date ?? found.snapshot_data?.resume_date ?? null,
+  }
 }
 
 export async function updateSplitStatus(client: any, userId: string, id: string | number, status: 'applied' | 'reverted'): Promise<void> {
