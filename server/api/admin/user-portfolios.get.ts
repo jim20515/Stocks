@@ -43,43 +43,18 @@ export default defineEventHandler(async (event) => {
 
   // 單一帳號的四個總計（與 summary.get.ts 的加權平均成本邏輯相同）
   function computeTotals(rows: any[]) {
-    // runningMap: account → code → { totalCost, totalShares }；null account 用 '' 自成一組
-    const runningMap: Record<string, Record<string, { totalCost: number; totalShares: number }>> = {}
+    const { ledger, sells } = computeCostBasis(rows)
     let realizedProfit = 0
+    // 每筆賣出各自四捨五入後再加總，與個人版 summary.get.ts 一致
+    for (const info of sells.values()) realizedProfit += Math.round(info.realized)
 
-    for (const h of rows) {
-      const code = h.stock_code.toUpperCase()
-      const acct = h.account ?? ''
-      if (!runningMap[acct]) runningMap[acct] = {}
-      if (!runningMap[acct][code]) runningMap[acct][code] = { totalCost: 0, totalShares: 0 }
-
-      if (h.shares > 0) {
-        runningMap[acct][code].totalCost += Number(h.average_cost) * h.shares
-        runningMap[acct][code].totalShares += h.shares
-      } else {
-        // 賣出：以當下加權平均成本計算實現損益
-        const { totalCost, totalShares } = runningMap[acct][code]
-        const wacc = totalShares > 0 ? totalCost / totalShares : Number(h.average_cost)
-        const sellPrice = Number(h.average_cost)
-        const absShares = Math.abs(h.shares)
-        // 每筆賣出各自四捨五入後再加總，與個人版 summary.get.ts 一致
-        realizedProfit += Math.round((sellPrice - wacc) * absShares)
-        runningMap[acct][code].totalCost = Math.max(0, totalCost - wacc * absShares)
-        runningMap[acct][code].totalShares = Math.max(0, totalShares - absShares)
-      }
-    }
-
-    // 總成本／總市值：跨帳戶加總（每帳戶各自 WACC × 淨持股）
+    // 總成本／總市值：各帳戶 WACC × 淨持股，再跨帳戶加總
     let totalCost = 0
     let totalValue = 0
-    for (const codeMap of Object.values(runningMap)) {
-      for (const [code, { totalCost: cost, totalShares: shares }] of Object.entries(codeMap)) {
-        if (shares <= 0) continue
-        const wacc = cost / shares
-        const info = priceInfos[code]
-        totalCost += wacc * shares
-        totalValue += info?.price ? info.price * shares : wacc * shares
-      }
+    for (const p of ledger.open()) {
+      const info = priceInfos[p.code]
+      totalCost += p.totalCost
+      totalValue += info?.price ? info.price * p.totalShares : p.totalCost
     }
     totalCost = Math.round(totalCost)
     totalValue = Math.round(totalValue)

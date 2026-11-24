@@ -1,4 +1,6 @@
 import { fetchPricesWithChange } from './stockPrice'
+import { computeCostBasis, tradeCashFlow } from './costBasis'
+import { fetchPriceSplits, adjustRawPrice, type PriceSplit } from './splitAdjust'
 
 interface TwseDayResp {
   stat?: string
@@ -28,8 +30,11 @@ async function fetchTwseClosePrice(code: string, dateStr: string): Promise<numbe
   return null
 }
 
-/** 取得歷史指定日期的收盤價（優先讀 DB，若無則打 TWSE / Yahoo 備援） */
-export async function getHistoricalClosePrice(client: any, code: string, dateStr: string): Promise<number | null> {
+/** 取得歷史指定日期的收盤價（優先讀 DB，若無則打 TWSE / Yahoo 備援，最後沿用前一筆收盤）。
+ *  splits：TWSE 回傳未還原分割的原始價，需依分割紀錄還原後才能寫入共用日線表。 */
+export async function getHistoricalClosePrice(
+  client: any, code: string, dateStr: string, splits: PriceSplit[] = [],
+): Promise<number | null> {
   const normalizedCode = code.toUpperCase()
 
   // 1. 先查資料庫 stock_daily_prices
@@ -48,7 +53,8 @@ export async function getHistoricalClosePrice(client: any, code: string, dateStr
   } catch {}
 
   // 2. TWSE 個股月報
-  const twsePrice = await fetchTwseClosePrice(normalizedCode, dateStr)
+  const rawTwsePrice = await fetchTwseClosePrice(normalizedCode, dateStr)
+  const twsePrice = rawTwsePrice != null ? adjustRawPrice(splits, normalizedCode, dateStr, rawTwsePrice) : null
   if (twsePrice != null && twsePrice > 0) {
     // 寫入 DB 快取，方便後續查詢
     try {
@@ -85,6 +91,19 @@ export async function getHistoricalClosePrice(client: any, code: string, dateStr
         }
       }
     }
+  } catch {}
+
+  // 4. 當天沒有成交（停止交易，例如分割換發期間、或日線缺漏）→ 沿用前一筆收盤（不寫回 DB）
+  try {
+    const { data } = await client
+      .from('stock_daily_prices')
+      .select('close_price')
+      .eq('stock_code', normalizedCode)
+      .lt('date', dateStr)
+      .order('date', { ascending: false })
+      .limit(1)
+    const p = Number(data?.[0]?.close_price)
+    if (Number.isFinite(p) && p > 0) return p
   } catch {}
 
   return null
@@ -138,6 +157,9 @@ export async function recalculateSnapshots(
     .order('id', { ascending: true })
 
   const holdingsList: any[] = allHoldings || []
+
+  const recalcCodes = [...new Set(holdingsList.map(h => String(h.stock_code).toUpperCase()))]
+  const priceSplits = await fetchPriceSplits(useServiceDb() ?? client, recalcCodes)
   const todayStr = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Taipei' })
 
   // 3. 逐日重算
@@ -145,33 +167,9 @@ export async function recalculateSnapshots(
     const d = snap.date
     const subHoldings = holdingsList.filter(h => h.buy_date <= d)
 
-    // 按帳戶分組計算 WACC（與 summary / snapshot.post API 相同邏輯）
-    const runningMap: Record<string, Record<string, { totalCost: number; totalShares: number }>> = {}
-    for (const h of subHoldings) {
-      const code = h.stock_code.toUpperCase()
-      const acct = h.account ?? ''
-      if (!runningMap[acct]) runningMap[acct] = {}
-      if (!runningMap[acct][code]) runningMap[acct][code] = { totalCost: 0, totalShares: 0 }
-      if (h.shares > 0) {
-        runningMap[acct][code].totalCost += Number(h.average_cost) * h.shares
-        runningMap[acct][code].totalShares += h.shares
-      } else {
-        const { totalCost, totalShares } = runningMap[acct][code]
-        const wacc = totalShares > 0 ? totalCost / totalShares : Number(h.average_cost)
-        const abs = Math.abs(h.shares)
-        runningMap[acct][code].totalCost = Math.max(0, totalCost - wacc * abs)
-        runningMap[acct][code].totalShares = Math.max(0, totalShares - abs)
-      }
-    }
-
-    // 收集所有有淨持股的代號
-    const activeCodesSet = new Set<string>()
-    for (const codeMap of Object.values(runningMap)) {
-      for (const [code, { totalShares }] of Object.entries(codeMap)) {
-        if (totalShares > 0) activeCodesSet.add(code)
-      }
-    }
-    const activeCodes = [...activeCodesSet]
+    // 依帳戶各自計算 WACC（costBasis.ts，與 summary / snapshot.post 相同）
+    const { ledger } = computeCostBasis(subHoldings)
+    const activeCodes = ledger.openCodes()
     if (!activeCodes.length) continue
 
     // 取得當日價格
@@ -184,33 +182,25 @@ export async function recalculateSnapshots(
       }
     } else {
       for (const c of activeCodes) {
-        const p = await getHistoricalClosePrice(client, c, d)
+        const p = await getHistoricalClosePrice(client, c, d, priceSplits)
         prices[c] = p ?? 0
       }
     }
 
     let totalValue = 0
-    let totalCost = 0
-    for (const codeMap of Object.values(runningMap)) {
-      for (const [code, { totalCost: cost, totalShares: shares }] of Object.entries(codeMap)) {
-        if (shares <= 0) continue
-        const wacc = cost / shares
-        const price = (prices[code] && prices[code] > 0) ? prices[code] : wacc
-        totalValue += price * shares
-        totalCost += wacc * shares
-      }
+    for (const p of ledger.open()) {
+      const px = prices[p.code]
+      const price = (px != null && px > 0) ? px : p.totalCost / p.totalShares
+      totalValue += price * p.totalShares
     }
 
     totalValue = Math.round(totalValue)
-    totalCost = Math.round(totalCost)
+    const totalCost = Math.round(ledger.totalCost())
 
-    // 當日買賣交易額
+    // 當日買賣淨現金流（用成交價）
     const todayTrades = subHoldings.filter(h => h.buy_date === d)
-    const dailyTradeAmount = Math.round(todayTrades.reduce((s, h) => s + Number(h.shares) * Number(h.average_cost), 0))
-    let tradeMarketImpact = 0
-    for (const h of todayTrades) {
-      tradeMarketImpact += Number(h.shares) * Number(h.average_cost)
-    }
+    const tradeMarketImpact = tradeCashFlow(todayTrades)
+    const dailyTradeAmount = Math.round(tradeMarketImpact)
 
     // 取前一交易日快照數值
     const { data: prevSnapArr } = await client

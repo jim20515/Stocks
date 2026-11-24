@@ -1,3 +1,5 @@
+import { fetchPriceSplits, adjustRawPrice, type PriceSplit } from '~~/server/utils/splitAdjust'
+
 export default defineEventHandler(async (event) => {
   const userId = await requireUser(event)
   const token = getBearerToken(event)
@@ -8,7 +10,7 @@ export default defineEventHandler(async (event) => {
   if (!year || !month) throw createError({ statusCode: 400, message: '缺少 year / month 參數' })
 
   const { data: holdings } = await client
-    .from('stock_holdings').select('*').eq('user_id', userId).order('buy_date')
+    .from('stock_holdings').select('*').eq('user_id', userId).order('buy_date').order('id')
 
   if (!holdings?.length) return { success: true, pricesInserted: 0, snapshotsInserted: 0, tradingDays: 0 }
 
@@ -51,6 +53,16 @@ export default defineEventHandler(async (event) => {
   // 直接在記憶體中建 dayMap，不在 INSERT 後再 SELECT
   const dayMap: Record<string, Record<string, number>> = {}
   const priorPriceMap: Record<string, number> = {}
+
+  // 證交所／櫃買回傳的是未還原分割的原始價，寫入共用日線表與計算市值前一律還原（見 splitAdjust.ts）。
+  // 分割紀錄跨使用者共用同一張日線表，用 service client 讀全部；未設定金鑰時退回只讀自己的。
+  let priceSplits: PriceSplit[] = []
+  try {
+    priceSplits = await fetchPriceSplits(useServiceDb() ?? client, activeCodes)
+  } catch (e: any) {
+    throw createError({ statusCode: 500, message: `讀取股票分割紀錄失敗，為避免寫入未還原的股價已中止：${e?.message ?? e}` })
+  }
+  if (priceSplits.length) debugLog.push(`分割還原：${priceSplits.map(s => `${s.stock_code} ${s.split_date} 1拆${s.ratio}`).join('、')}`)
 
   for (const code of activeCodes) {
     // 先載入 DB 既有資料；後續仍會重新抓當月資料補齊，避免「只有部分資料卻整月跳過」。
@@ -100,7 +112,7 @@ export default defineEventHandler(async (event) => {
           const parts = dateRaw.split('/')
           if (parts.length < 3) continue
           const isoDate = `${parseInt(parts[0]) + 1911}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`
-          toInsert.push({ stock_code: code, date: isoDate, close_price: close })
+          toInsert.push({ stock_code: code, date: isoDate, close_price: adjustRawPrice(priceSplits, code, isoDate, close) })
         }
         if (toInsert.length) {
           const { error: upsertErr } = await client
@@ -142,7 +154,7 @@ export default defineEventHandler(async (event) => {
             const parts = dateRaw.split('/')
             if (parts.length < 3) continue
             const isoDate = `${parseInt(parts[0]) + 1911}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`
-            toInsert.push({ stock_code: code, date: isoDate, close_price: close })
+            toInsert.push({ stock_code: code, date: isoDate, close_price: adjustRawPrice(priceSplits, code, isoDate, close) })
           }
           if (toInsert.length) {
             const { error: upsertErr } = await client
@@ -196,97 +208,59 @@ export default defineEventHandler(async (event) => {
     .limit(1)
   const lastSnap = lastSnapArr?.[0] ?? null
 
-  let prevTradingDay: string | null = lastSnap?.date ?? null
+  const prevTradingDay: string | null = lastSnap?.date ?? null
 
-  // Rolling WACC：依帳戶初始化到上個月為止的所有交易，與持股管理/當日快照一致。
-  const waccMap: Record<string, Record<string, { totalCost: number; totalShares: number }>> = {}
-  for (const h of holdings.filter(h => !prevTradingDay || h.buy_date <= prevTradingDay)) {
-    const code = h.stock_code.toUpperCase()
-    const acct = h.account ?? ''
-    if (!waccMap[acct]) waccMap[acct] = {}
-    if (!waccMap[acct][code]) waccMap[acct][code] = { totalCost: 0, totalShares: 0 }
-    if (h.shares > 0) {
-      waccMap[acct][code].totalCost += h.shares * Number(h.average_cost)
-      waccMap[acct][code].totalShares += h.shares
-    } else {
-      const entry = waccMap[acct][code]
-      const wacc = entry.totalShares > 0
-        ? entry.totalCost / entry.totalShares
-        : Number(h.average_cost)
-      const abs = Math.abs(h.shares)
-      entry.totalCost = Math.max(0, entry.totalCost - wacc * abs)
-      entry.totalShares = Math.max(0, entry.totalShares - abs)
+  // Rolling WACC：依帳戶初始化到上個月最後快照日為止的所有交易（costBasis.ts，與持股管理／當日快照一致）。
+  // total_cost 每天直接由帳本加總，不再沿用上一筆快照的 total_cost 累加，避免舊快照的錯誤一路傳下去。
+  const sortedHoldings = sortTrades(holdings)
+  const ledger = new CostLedger()
+  let applied = 0
+  if (prevTradingDay) {
+    while (applied < sortedHoldings.length && String(sortedHoldings[applied].buy_date) <= prevTradingDay) {
+      ledger.apply(sortedHoldings[applied++])
     }
   }
-  let runningTotalCost = lastSnap?.total_cost ?? 0
 
   const snapshots: any[] = []
   const lastKnownPrice: Record<string, number> = { ...priorPriceMap }
   const missingPriceLog = new Set<string>()
+  // 略過的日子（無市值）其交易現金流順延到下一個有快照的日子
+  let pendingCashFlow = 0
 
   for (const date of tradingDays) {
     for (const [code, price] of Object.entries(dayMap[date] ?? {})) {
       lastKnownPrice[code] = price
     }
 
-    // 計算當日淨持股市值
-    const netMap: Record<string, number> = {}
-    for (const h of holdings.filter(h => h.buy_date <= date)) {
-      const code = h.stock_code.toUpperCase()
-      netMap[code] = (netMap[code] ?? 0) + h.shares
+    // 套用今日（含假日順延）的所有交易
+    const todayTrades: any[] = []
+    while (applied < sortedHoldings.length && String(sortedHoldings[applied].buy_date) <= date) {
+      const h = sortedHoldings[applied++]
+      ledger.apply(h)
+      todayTrades.push(h)
     }
+    pendingCashFlow += tradeCashFlow(todayTrades)
+
+    // 當日各帳戶淨持股市值
     let totalStock = 0
-    for (const [code, netShares] of Object.entries(netMap)) {
-      if (netShares <= 0) continue
-      const price = dayMap[date]?.[code] ?? lastKnownPrice[code]
+    for (const p of ledger.open()) {
+      const price = dayMap[date]?.[p.code] ?? lastKnownPrice[p.code]
       if (price != null) {
-        totalStock += price * netShares
+        totalStock += price * p.totalShares
       } else {
-        missingPriceLog.add(`${date}: ${code} 缺少歷史價格，該日略過此檔`)
+        missingPriceLog.add(`${date}: ${p.code} 缺少歷史價格，該日略過此檔`)
       }
     }
     if (totalStock === 0) continue
-
-    // 今日（含假日順延）的所有交易
-    const todayTrades = holdings.filter(h =>
-      h.buy_date <= date && (!prevTradingDay || h.buy_date > prevTradingDay)
-    )
-
-    // 更新 rolling WACC，計算 total_cost 與 daily_trade_amount
-    let dailyTradeAmount = 0
-    for (const h of todayTrades) {
-      const code = h.stock_code.toUpperCase()
-      const acct = h.account ?? ''
-      if (!waccMap[acct]) waccMap[acct] = {}
-      if (!waccMap[acct][code]) waccMap[acct][code] = { totalCost: 0, totalShares: 0 }
-      if (h.shares > 0) {
-        const cost = h.shares * Number(h.average_cost)
-        waccMap[acct][code].totalCost += cost
-        waccMap[acct][code].totalShares += h.shares
-        runningTotalCost += cost          // 買入：加買入金額
-        dailyTradeAmount += cost
-      } else {
-        const entry = waccMap[acct][code]
-        const wacc = entry.totalShares > 0
-          ? entry.totalCost / entry.totalShares
-          : Number(h.average_cost)
-        const abs = Math.abs(h.shares)
-        const costBasis = wacc * abs
-        entry.totalCost = Math.max(0, entry.totalCost - costBasis)
-        entry.totalShares = Math.max(0, entry.totalShares - abs)
-        runningTotalCost -= costBasis     // 賣出：扣均成本
-        dailyTradeAmount -= costBasis
-      }
-    }
 
     snapshots.push({
       user_id: userId,
       date,
       total_value: Math.round(totalStock),
-      total_cost: Math.round(runningTotalCost),
-      daily_trade_amount: Math.round(dailyTradeAmount),
+      total_cost: Math.round(ledger.totalCost()),
+      daily_trade_amount: Math.round(pendingCashFlow),
     })
-    prevTradingDay = date
+    pendingCashFlow = 0
   }
 
   if (snapshots.length) {

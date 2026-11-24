@@ -1,5 +1,6 @@
 import { getSplitById, updateSplitStatus } from '~~/server/utils/splitStorage'
 import { restoreSnapshots } from '~~/server/utils/snapshotRecalc'
+import { scaleDailyPrices, countOtherPriceSplits } from '~~/server/utils/splitAdjust'
 
 export default defineEventHandler(async (event) => {
   const userId = await requireUser(event)
@@ -29,7 +30,8 @@ export default defineEventHandler(async (event) => {
       .in('id', ids)
       .eq('user_id', userId)
 
-    if (!fetchErr && currentHoldings?.length) {
+    if (fetchErr) throw createError({ statusCode: 500, message: `讀取持股失敗：${fetchErr.message}` })
+    if (currentHoldings?.length) {
       const holdingMap = new Map(snapshotHoldings.map(s => [s.id, s]))
       // 同 apply：id 為 GENERATED ALWAYS identity，只能逐筆 update，不可 upsert 帶 id。
       for (const ch of currentHoldings) {
@@ -37,7 +39,12 @@ export default defineEventHandler(async (event) => {
         if (!snap) continue
         const { error: updateErr } = await client
           .from('stock_holdings')
-          .update({ shares: snap.shares, average_cost: snap.average_cost })
+          .update({
+            shares: snap.shares,
+            average_cost: snap.average_cost,
+            // 舊紀錄沒存水位價，維持現值
+            ...(snap.watermark_price !== undefined ? { watermark_price: snap.watermark_price } : {}),
+          })
           .eq('id', ch.id)
           .eq('user_id', userId)
 
@@ -48,28 +55,21 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  // 3. 若先前有同步調整歷史日收盤價，將其反向還原 (乘以 ratio)
+  // 3. 若先前有同步調整歷史日收盤價，將其反向還原 (乘以 ratio)。
+  //    日線表是共用的：同代號同基準日若還有其他使用者的分割仍在套用，就不能還原。
+  let pricesNote = ''
   if (record.adjust_daily_prices) {
-    const { data: prices, error: pError } = await client
-      .from('stock_daily_prices')
-      .select('id, stock_code, date, close_price')
-      .eq('stock_code', record.stock_code)
-      .lte('date', record.split_date)
-
-    if (!pError && prices?.length) {
-      const r = Number(record.ratio)
-      // 移除 id（identity 欄位不可寫入），以 (stock_code,date) 為衝突鍵 upsert
-      const restoredPrices = prices.map((p: any) => ({
-        stock_code: p.stock_code,
-        date: p.date,
-        close_price: Math.round(Number(p.close_price) * r * 100) / 100,
-      }))
-
-      const BATCH_SIZE = 500
-      for (let i = 0; i < restoredPrices.length; i += BATCH_SIZE) {
-        const chunk = restoredPrices.slice(i, i + BATCH_SIZE)
-        await client.from('stock_daily_prices').upsert(chunk, { onConflict: 'stock_code,date' })
+    const priceClient = useServiceDb() ?? client
+    try {
+      const others = await countOtherPriceSplits(priceClient, record.stock_code, record.split_date, record.id)
+      if (others > 0) {
+        pricesNote = ' 其他帳號仍套用同一個分割，歷史日線維持已還原狀態。'
+      } else {
+        const n = await scaleDailyPrices(priceClient, record.stock_code, record.split_date, Number(record.ratio))
+        pricesNote = ` 已將 ${n} 筆歷史日線恢復為原始價格。`
       }
+    } catch (err: any) {
+      throw createError({ statusCode: 500, message: `持股已還原，但歷史日線恢復失敗：${err?.message ?? err}` })
     }
   }
 
@@ -88,7 +88,7 @@ export default defineEventHandler(async (event) => {
 
   return {
     ok: true,
-    message: `已成功還原 ${record.stock_code} 的 1 拆 ${record.ratio} 分割設定！` + (savedSnapshots.length > 0 ? ` 並同步還原 ${savedSnapshots.length} 筆歷史資產快照。` : ''),
+    message: `已成功還原 ${record.stock_code} 的 1 拆 ${record.ratio} 分割設定！` + pricesNote + (savedSnapshots.length > 0 ? ` 並同步還原 ${savedSnapshots.length} 筆歷史資產快照。` : ''),
     splitId: record.id,
     snapshotsRestoredCount: savedSnapshots.length,
   }

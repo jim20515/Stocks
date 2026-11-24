@@ -1,5 +1,6 @@
 // 各帳號持股明細：依 portfolio_accounts 的自訂順序分組，
-// 每個帳號內再依 stock_code 彙總（淨股數、加權均成本、市值、損益、帳號內佔比、Beta 貢獻）。
+// 每個帳號內再依 stock_code 彙總（淨股數、該帳號移動加權平均成本、市值、損益、帳號內佔比、Beta 貢獻）。
+// 成本計算統一走 server/utils/costBasis.ts，與持股管理一致。
 // 與 beta-summary（跨帳號彙總）互不影響。
 
 export default defineEventHandler(async (event) => {
@@ -8,7 +9,7 @@ export default defineEventHandler(async (event) => {
   const client = useDb(token)
 
   const [{ data: holdings }, { data: accounts }] = await Promise.all([
-    client.from('stock_holdings').select('*').eq('user_id', userId).order('stock_code'),
+    client.from('stock_holdings').select('*').eq('user_id', userId).order('buy_date').order('id'),
     client.from('portfolio_accounts').select('id, name, sort_order, created_at').eq('user_id', userId),
   ])
 
@@ -25,43 +26,39 @@ export default defineEventHandler(async (event) => {
   const accIndex = new Map<string, number>()
   accRows.forEach((a: any, i: number) => accIndex.set(String(a.name).trim(), i))
 
-  // 各股票整體淨股數，決定哪些股票仍在持有（口徑與主表一致）
-  const netByCode: Record<string, number> = {}
-  for (const h of rows) {
-    const code = String(h.stock_code).toUpperCase()
-    netByCode[code] = (netByCode[code] ?? 0) + Number(h.shares)
-  }
-  const codes = Object.keys(netByCode).filter(c => netByCode[c] > 0)
+  // 依帳戶各自計算 WACC
+  const { ledger } = computeCostBasis(rows)
+  const codes = ledger.openCodes()
   const prices: Record<string, number> = codes.length ? await fetchPrices(codes) : {}
 
-  // 帳號 → 股票 彙總
-  interface AccItem {
-    stockCode: string
-    stockName: string
-    shares: number
-    totalBuyCost: number
-    totalBuyShares: number
-    levWeighted: number
-  }
-  const groups: Record<string, Record<string, AccItem>> = {}
-
+  // 股名與持股類型（槓桿倍數：以該帳號的淨股數加權）
+  const nameByCode: Record<string, string> = {}
+  const levByAcct: Record<string, Record<string, { lev: number; net: number }>> = {}
   for (const h of rows) {
     const code = String(h.stock_code).toUpperCase()
-    if ((netByCode[code] ?? 0) <= 0) continue
-    const accName = (h.account && String(h.account).trim()) || UNASSIGNED
-    if (!groups[accName]) groups[accName] = {}
-    const g = groups[accName]
-    if (!g[code]) {
-      g[code] = { stockCode: code, stockName: h.stock_name, shares: 0, totalBuyCost: 0, totalBuyShares: 0, levWeighted: 0 }
+    nameByCode[code] ??= h.stock_name
+    const accName = accountKey(h.account) || UNASSIGNED
+    levByAcct[accName] ??= {}
+    const e = (levByAcct[accName][code] ??= { lev: 0, net: 0 })
+    e.lev += Number(h.shares) * Number(h.leverage_multiplier ?? 1)
+    e.net += Number(h.shares)
+  }
+
+  // 帳號 → 股票 持倉
+  const groups: Record<string, Record<string, { stockCode: string; stockName: string; shares: number; totalCost: number; leverage: number }>> = {}
+  for (const p of ledger.open()) {
+    const accName = p.account || UNASSIGNED
+    groups[accName] ??= {}
+    groups[accName][p.code] = {
+      stockCode: p.code,
+      stockName: nameByCode[p.code] ?? p.code,
+      shares: p.totalShares,
+      totalCost: p.totalCost,
+      leverage: (() => {
+        const e = levByAcct[accName]?.[p.code]
+        return e && e.net > 0 ? e.lev / e.net : 1
+      })(),
     }
-    const it = g[code]
-    const sh = Number(h.shares)
-    it.shares += sh
-    if (sh > 0) {
-      it.totalBuyCost += Number(h.average_cost) * sh
-      it.totalBuyShares += sh
-    }
-    it.levWeighted += sh * Number(h.leverage_multiplier ?? 1)
   }
 
   // 帳號排序：自訂清單內 → 清單外（名稱）→ 未指定
@@ -80,15 +77,14 @@ export default defineEventHandler(async (event) => {
   const accountsOut = orderedNames.map((name) => {
     const g = groups[name]
     const items = Object.values(g)
-      .filter(it => it.shares > 0)
       .map((it) => {
         const price = prices[it.stockCode] ?? null
-        const avgCost = it.totalBuyShares > 0 ? it.totalBuyCost / it.totalBuyShares : 0
+        const avgCost = it.totalCost / it.shares
         const effPrice = price ?? avgCost
         const marketValue = Math.round(effPrice * it.shares)
-        const totalCost = Math.round(avgCost * it.shares)
+        const totalCost = Math.round(it.totalCost)
         const profit = marketValue - totalCost
-        const leverage = it.shares > 0 ? it.levWeighted / it.shares : 1
+        const leverage = it.leverage
         return {
           stockCode: it.stockCode,
           stockName: it.stockName,

@@ -1,5 +1,6 @@
 // 共用股價更新邏輯：抓 TWSE→TPEx→Yahoo 月資料，補進共用表 stock_daily_prices。
 // 只動 stock_daily_prices（全域共用），不碰 user_stock_tracking（會員各自）。
+import { fetchPriceSplits, adjustRawPrices } from './splitAdjust'
 type DailyPrice = { date: string; close_price: number }
 type FetchResult = { source: 'TWSE' | 'TPEx' | 'Yahoo' | 'none'; prices: DailyPrice[] }
 
@@ -99,6 +100,9 @@ export async function syncPriceRange(
     cursor = addMonth(cursor)
   }
 
+  // TWSE/TPEx 是未還原分割的原始價，寫入共用日線表前先還原（Yahoo 已還原，不再處理）
+  const splits = await fetchPriceSplits(useServiceDb() ?? client, [code])
+
   let inserted = 0
   for (const m of months) {
     const monthStart = `${m.key}-01`
@@ -113,10 +117,11 @@ export async function syncPriceRange(
 
     const fetched = await fetchMonthPrices(code, m.year, m.month)
     if (!fetched.prices.length) continue
+    const monthPrices = fetched.source === 'Yahoo' ? fetched.prices : adjustRawPrices(splits, code, fetched.prices)
 
     const existingDates = new Set((existing ?? []).map((r: any) => r.date))
     const missingByDate = new Map<string, { stock_code: string; date: string; close_price: number }>()
-    for (const row of fetched.prices) {
+    for (const row of monthPrices) {
       if (existingDates.has(row.date) || missingByDate.has(row.date)) continue
       missingByDate.set(row.date, { stock_code: code, date: row.date, close_price: row.close_price })
     }

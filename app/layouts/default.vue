@@ -242,13 +242,13 @@ async function confirmImport() {
     const filtered = importPreview.value
       .filter((r: any) => importFilterCodes.value.has(r.stockCode))
       .map((r: any) => ({ ...r, account: importAccount.value || null }))
-    await ($authFetch as any)('/api/stockholdings/import', {
+    const res = await ($authFetch as any)('/api/stockholdings/import', {
       method: 'POST',
       body: { items: filtered },
     })
     refreshKey.value++
     showImportModal.value = false
-    toast.success(`已匯入 ${filtered.length} 筆持股`)
+    toast.success(`已匯入 ${filtered.length} 筆持股` + (res?.splitAdjusted ? `，其中 ${res.splitAdjusted} 筆在分割基準日以前，已依分割換算股數與價格` : ''), res?.splitAdjusted ? 6000 : undefined)
   } catch (error: any) {
     detectError.value = `匯入失敗：${getImportErrorMessage(error)}`
   } finally {
@@ -358,6 +358,36 @@ function inferLeverage(code: string): number {
   return 1
 }
 
+// 賣出參考均成本：依「所選帳戶」該股目前的移動加權平均成本（與持股管理的實現損益口徑一致）
+let sellPositions: any[] | null = null
+// 編輯既有賣出時保留該筆「賣出當下」的均成本（由 summary 計算），不以目前持倉覆蓋
+async function refreshSellCostBasis(reload = true) {
+  if (editingId.value) return
+  const code = form.value.stockCode.trim().toUpperCase()
+  if (form.value.tradeType !== 'sell' || !code) {
+    form.value.costBasis = ''
+    return
+  }
+  try {
+    if (reload || !sellPositions) {
+      const summary = await ($authFetch as any)<any>('/api/stockholdings/summary')
+      sellPositions = summary?.positions ?? []
+    }
+    const acct = form.value.account?.trim() || null
+    const pos = (sellPositions ?? []).find((p: any) => p.stockCode.toUpperCase() === code && (p.account ?? null) === acct)
+    form.value.costBasis = pos ? String(pos.averageCost) : ''
+  } catch (e: any) {
+    form.value.costBasis = ''
+    toast.error(`無法取得均成本：${e?.data?.message ?? e?.message ?? '未知錯誤'}`)
+  }
+}
+
+watch(() => [form.value.account, form.value.tradeType], () => {
+  if (editingId.value) return
+  if (form.value.tradeType === 'sell' && form.value.stockCode.trim()) refreshSellCostBasis(false)
+  else form.value.costBasis = ''
+})
+
 async function onCodeBlur() {
   const code = form.value.stockCode.trim()
   if (!code) return
@@ -367,19 +397,8 @@ async function onCodeBlur() {
   try {
     const data = await ($authFetch as any)<any>(`/api/stockholdings/lookup/${code}`)
     form.value.stockName = data.name
-    if (form.value.tradeType === 'sell') {
-      // 賣出：averageCost 存賣出價（市價）；costBasis 另外查 WACC 顯示參考
-      if (data.price) form.value.averageCost = data.price
-      const summary = await ($authFetch as any)<any>('/api/stockholdings/summary')
-      const holdings: any[] = summary?.items ?? []
-      const buyLots = holdings.filter((h: any) => h.stockCode.toUpperCase() === code.toUpperCase() && h.shares > 0)
-      const totalShares = buyLots.reduce((s: number, h: any) => s + h.shares, 0)
-      const totalCost = buyLots.reduce((s: number, h: any) => s + h.averageCost * h.shares, 0)
-      form.value.costBasis = totalShares > 0 ? String(Math.round(totalCost / totalShares * 100) / 100) : ''
-    } else {
-      if (data.price) form.value.averageCost = data.price
-      form.value.costBasis = ''
-    }
+    if (data.price) form.value.averageCost = data.price
+    await refreshSellCostBasis()
   } catch {
     lookupError.value = '查無此代號'
   } finally {
@@ -400,13 +419,15 @@ async function submitForm() {
     watermarkPrice: form.value.watermarkPrice ? Number(form.value.watermarkPrice) : null,
     account: form.value.account?.trim() || null,
   }
+  let splitNotes: string[] = []
   if (editingId.value) {
     await ($authFetch as any)(`/api/stockholdings/${editingId.value}`, { method: 'PUT', body: payload })
   } else {
-    await ($authFetch as any)('/api/stockholdings', { method: 'POST', body: payload })
+    const res = await ($authFetch as any)('/api/stockholdings', { method: 'POST', body: payload })
+    splitNotes = res?.splitNotes ?? []
   }
   refreshKey.value++
-  toast.success(editingId.value ? '已儲存變更' : '已新增交易')
+  toast.success(editingId.value ? '已儲存變更' : (splitNotes.length ? `已新增交易：${splitNotes.join('；')}` : '已新增交易'), splitNotes.length ? 6000 : undefined)
   closeModal()
 }
 

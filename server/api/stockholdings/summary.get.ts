@@ -4,7 +4,7 @@ export default defineEventHandler(async (event) => {
   const client = useDb(token)
 
   const [{ data: holdings, error }, { data: settings }] = await Promise.all([
-    client.from('stock_holdings').select('*').eq('user_id', userId).order('buy_date'),
+    client.from('stock_holdings').select('*').eq('user_id', userId).order('buy_date').order('id'),
     client.from('portfolio_settings').select('cash_amount').eq('user_id', userId).single(),
   ])
 
@@ -15,40 +15,11 @@ export default defineEventHandler(async (event) => {
     return { items: [], cashAmount, totalCost: 0, totalValue: 0, totalProfit: 0, totalProfitPct: 0, totalRealizedProfit: 0, priceDate: null }
   }
 
-  // runningMap: account → code → { totalCost, totalShares }
-  // null account 用 '' 作為 key，自成一組
-  const runningMap: Record<string, Record<string, { totalCost: number; totalShares: number }>> = {}
-  const sellWaccMap: Record<number, number> = {}
+  // 依帳戶各自計算 WACC（server/utils/costBasis.ts）
+  const { ledger, sells } = computeCostBasis(holdings)
+  const codesWithShares = ledger.openCodes()
 
-  for (const h of holdings) {
-    const code = h.stock_code.toUpperCase()
-    const acct = h.account ?? ''
-
-    if (!runningMap[acct]) runningMap[acct] = {}
-    if (!runningMap[acct][code]) runningMap[acct][code] = { totalCost: 0, totalShares: 0 }
-
-    if (h.shares > 0) {
-      runningMap[acct][code].totalCost += Number(h.average_cost) * h.shares
-      runningMap[acct][code].totalShares += h.shares
-    } else {
-      const { totalCost, totalShares } = runningMap[acct][code]
-      const wacc = totalShares > 0 ? totalCost / totalShares : Number(h.average_cost)
-      sellWaccMap[h.id] = wacc
-      const absShares = Math.abs(h.shares)
-      runningMap[acct][code].totalCost = Math.max(0, totalCost - wacc * absShares)
-      runningMap[acct][code].totalShares = Math.max(0, totalShares - absShares)
-    }
-  }
-
-  // 收集所有有淨持股的代號，用於抓現價
-  const codesWithShares = new Set<string>()
-  for (const codeMap of Object.values(runningMap)) {
-    for (const [code, { totalShares }] of Object.entries(codeMap)) {
-      if (totalShares > 0) codesWithShares.add(code)
-    }
-  }
-
-  const priceInfos = await fetchPricesWithChange([...codesWithShares])
+  const priceInfos = await fetchPricesWithChange(codesWithShares)
   const prices: Record<string, number> = {}
   for (const [code, info] of Object.entries(priceInfos)) prices[code] = info.price
 
@@ -60,7 +31,7 @@ export default defineEventHandler(async (event) => {
 
     if (isSell) {
       // 賣出行：使用賣出當下的歷史 WACC
-      const wacc = sellWaccMap[h.id] ?? Number(h.average_cost)
+      const wacc = sells.get(h.id)?.wacc ?? Number(h.average_cost)
       const sellPrice = Number(h.average_cost)
       const absShares = Math.abs(h.shares)
       const realizedProfit = Math.round((sellPrice - wacc) * absShares)
@@ -112,19 +83,16 @@ export default defineEventHandler(async (event) => {
     }
   })
 
-  // 總成本／市值：跨帳戶加總（每帳戶各自 WACC × 淨持股）
+  // 總成本／市值：各帳戶 WACC × 該帳戶淨持股，再跨帳戶加總
   let totalCost = 0
   let totalValue = 0
   let totalPrevValue = 0
-  for (const codeMap of Object.values(runningMap)) {
-    for (const [code, { totalCost: cost, totalShares: shares }] of Object.entries(codeMap)) {
-      if (shares <= 0) continue
-      const wacc = cost / shares
-      const info = priceInfos[code]
-      totalCost += wacc * shares
-      totalValue += info?.price ? info.price * shares : wacc * shares
-      totalPrevValue += info?.prevClose ? info.prevClose * shares : (info?.price ?? wacc) * shares
-    }
+  for (const p of ledger.open()) {
+    const wacc = p.totalCost / p.totalShares
+    const info = priceInfos[p.code]
+    totalCost += p.totalCost
+    totalValue += info?.price ? info.price * p.totalShares : p.totalCost
+    totalPrevValue += info?.prevClose ? info.prevClose * p.totalShares : (info?.price ?? wacc) * p.totalShares
   }
   totalCost = Math.round(totalCost)
   totalValue = Math.round(totalValue)
@@ -143,29 +111,36 @@ export default defineEventHandler(async (event) => {
 
   // 按代號加總淨持股（跨帳戶合併，使用 WACC-based cost）
   const byCodeMap: Record<string, { stockCode: string; stockName: string; shares: number; cost: number; value: number; profit: number; dailyChangePct: number | null }> = {}
-  for (const codeMap of Object.values(runningMap)) {
-    for (const [code, { totalCost: cost, totalShares: shares }] of Object.entries(codeMap)) {
-      if (shares <= 0) continue
-      const wacc = cost / shares
-      const info = priceInfos[code]
-      const price = info?.price ?? wacc
-      const value = Math.round(price * shares)
-      const costRounded = Math.round(wacc * shares)
-      if (!byCodeMap[code]) {
-        const sample = items.find(i => i.stockCode.toUpperCase() === code)
-        byCodeMap[code] = { stockCode: code, stockName: sample?.stockName ?? code, shares: 0, cost: 0, value: 0, profit: 0, dailyChangePct: info?.changePct ?? null }
-      }
-      byCodeMap[code].shares += shares
-      byCodeMap[code].cost += costRounded
-      byCodeMap[code].value += value
-      byCodeMap[code].profit += value - costRounded
+  for (const p of ledger.open()) {
+    const code = p.code
+    const shares = p.totalShares
+    const info = priceInfos[code]
+    const price = info?.price ?? p.totalCost / shares
+    const value = Math.round(price * shares)
+    const costRounded = Math.round(p.totalCost)
+    if (!byCodeMap[code]) {
+      const sample = items.find(i => i.stockCode.toUpperCase() === code)
+      byCodeMap[code] = { stockCode: code, stockName: sample?.stockName ?? code, shares: 0, cost: 0, value: 0, profit: 0, dailyChangePct: info?.changePct ?? null }
     }
+    byCodeMap[code].shares += shares
+    byCodeMap[code].cost += costRounded
+    byCodeMap[code].value += value
+    byCodeMap[code].profit += value - costRounded
   }
   const byCode = Object.values(byCodeMap)
+
+  // 各帳戶目前持倉（賣出彈窗依帳戶帶出均成本用）
+  const positions = ledger.open().map(p => ({
+    account: p.account || null,
+    stockCode: p.code,
+    shares: p.totalShares,
+    averageCost: Math.round(p.totalCost / p.totalShares * 100) / 100,
+  }))
 
   return {
     items,
     byCode,
+    positions,
     cashAmount,
     totalCost,
     totalValue,

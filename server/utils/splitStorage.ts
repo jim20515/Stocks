@@ -14,7 +14,7 @@ export interface SplitRecord {
   daily_prices_count: number
   status: 'applied' | 'reverted'
   snapshot_data: {
-    holdings: Array<{ id: number; shares: number; average_cost: number }>
+    holdings: Array<{ id: number; shares: number; average_cost: number; watermark_price?: number | null }>
     dailyPricesCount?: number
     resume_date?: string | null
     snapshots?: Array<{
@@ -193,4 +193,24 @@ export async function updateSplitStatus(client: any, userId: string, id: string 
     target.reverted_at = revertedAt
     writeFallbackSplits(all)
   }
+}
+
+/** 套用分割後才補登的舊交易：把原始值附加到分割紀錄的 snapshot_data.holdings，還原分割時才會一併還原。 */
+export async function appendSplitHoldings(
+  client: any, userId: string, record: SplitRecord,
+  entries: Array<{ id: number; shares: number; average_cost: number; watermark_price?: number | null }>,
+): Promise<void> {
+  if (!entries.length) return
+  const snapshot_data = {
+    ...(record.snapshot_data ?? { holdings: [] }),
+    holdings: [...(record.snapshot_data?.holdings ?? []), ...entries],
+  }
+  const { error } = await client
+    .from('stock_splits')
+    .update({ snapshot_data, holdings_count: (record.holdings_count ?? 0) + entries.length })
+    .eq('id', record.id)
+    .eq('user_id', userId)
+  if (error) throw new Error(`更新分割紀錄失敗：${error.message}`)
+  record.snapshot_data = snapshot_data
+  record.holdings_count = (record.holdings_count ?? 0) + entries.length
 }
