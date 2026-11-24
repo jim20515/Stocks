@@ -157,7 +157,9 @@ async function main() {
     const toInsert: PriceRow[] = []
     for (const code of codes) {
       for (const ym of months) {
-        const existing = new Set((await fetchAllDailyPrices(db, code, { from: `${ym}-01`, to: `${ym}-31` })).map(r => r.date))
+        const [yy, mm] = ym.split('-').map(Number)
+        const monthEnd = `${ym}-${String(new Date(yy!, mm!, 0).getDate()).padStart(2, '0')}`
+        const existing = new Set((await fetchAllDailyPrices(db, code, { from: `${ym}-01`, to: monthEnd })).map(r => r.date))
         const raw = await fetchRawMonth(code, ym)
         await new Promise(r => setTimeout(r, 1200)) // 證交所有頻率限制
         const missing = raw.filter(r => !existing.has(r.date))
