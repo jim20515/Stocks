@@ -54,11 +54,9 @@ const allRows = computed(() => {
     return { ...row, total_profit: totalProfit, daily_change: dailyChange, daily_change_pct: dailyChangePct, total_profit_pct: totalProfitPct, cum_profit: 0 }
   })
 
-  // 累積獲利 = 每日漲跌的累積加總
-  let cumProfit = 0
+  // 累積獲利 = 總漲跌（未實現）+ 截至當日的已實現損益（帳戶別 WACC，後端 cum_realized）
   for (const row of withCalc) {
-    cumProfit += row.daily_change ?? 0
-    row.cum_profit = Math.round(cumProfit)
+    row.cum_profit = Math.round(row.total_profit + Number(row.cum_realized ?? 0))
   }
 
   return withCalc.reverse() // 由新到舊顯示
@@ -340,7 +338,7 @@ async function refreshWithSnapshot() {
               </th>
               <th class="text-right px-5 py-3 text-xs font-medium text-slate-500">
                 <span class="inline-flex items-center gap-1 justify-end">總漲跌
-                  <span class="formula-tip" @mouseover="showTip($event, '總市值 − 總成本（含未實現＋已實現損益）')" @mouseleave="hideTip" @click.stop="toggleTip($event, '總市值 − 總成本（含未實現＋已實現損益）')">?</span>
+                  <span class="formula-tip" @mouseover="showTip($event, '總市值 − 總成本（僅未實現損益，不含已賣出部分）')" @mouseleave="hideTip" @click.stop="toggleTip($event, '總市值 − 總成本（僅未實現損益，不含已賣出部分）')">?</span>
                 </span>
               </th>
               <th class="text-right px-5 py-3 text-xs font-medium text-slate-500">
@@ -350,7 +348,7 @@ async function refreshWithSnapshot() {
               </th>
               <th class="text-right px-5 py-3 text-xs font-medium text-slate-500">
                 <span class="inline-flex items-center gap-1 justify-end">累積獲利
-                  <span class="formula-tip" @mouseover="showTip($event, '每日漲跌的累積加總（純股價漲跌貢獻）')" @mouseleave="hideTip" @click.stop="toggleTip($event, '每日漲跌的累積加總（純股價漲跌貢獻）')">?</span>
+                  <span class="formula-tip" @mouseover="showTip($event, '總漲跌 + 截至當日的已實現損益（賣出價 − 該帳戶平均成本）')" @mouseleave="hideTip" @click.stop="toggleTip($event, '總漲跌 + 截至當日的已實現損益（賣出價 − 該帳戶平均成本）')">?</span>
                 </span>
               </th>
             </tr>
