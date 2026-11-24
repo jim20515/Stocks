@@ -85,33 +85,20 @@ function barClass(actual: number, target: number) {
   return actual >= target ? 'bg-green-400' : 'bg-red-400'
 }
 
-// 依股票代號加總
+// 每檔股票一列：成本與損益直接採用 API（各帳戶各自 WACC 加總），前端不再重算均成本
 const aggregatedItems = computed(() => {
   const items: any[] = d.value?.items ?? []
   const totalValue = d.value?.totalValue ?? 1
-  const map: Record<string, any> = {}
-  for (const h of items) {
-    if (!map[h.stockCode]) {
-      map[h.stockCode] = { ...h, shares: 0, marketValue: 0, totalBuyCost: 0, totalBuyShares: 0 }
-    }
-    map[h.stockCode].shares += h.shares
-    map[h.stockCode].marketValue += h.marketValue
-    // 只有買入（正股數）才計入均成本
-    if (h.shares > 0) {
-      map[h.stockCode].totalBuyCost += Number(h.averageCost) * h.shares
-      map[h.stockCode].totalBuyShares += h.shares
-    }
-  }
-  return Object.values(map).filter(h => h.shares > 0).map(h => {
-    const avgCost = h.totalBuyShares > 0 ? Math.round(h.totalBuyCost / h.totalBuyShares * 100) / 100 : null
+  return items.filter(h => h.shares > 0).map(h => {
     const marketValue = Math.round(h.marketValue)
+    const avgCost = h.averageCost != null ? Number(h.averageCost) : null
+    const apiCost = h.totalCost != null ? Number(h.totalCost) : (avgCost != null ? Math.round(avgCost * h.shares) : null)
     // 類現金（0x）無成本概念
-    const totalCost = (avgCost != null && h.leverageMultiplier !== 0) ? Math.round(avgCost * h.shares) : null
+    const totalCost = (apiCost != null && h.leverageMultiplier !== 0) ? apiCost : null
     const profit = totalCost != null ? marketValue - totalCost : null
     const profitPct = (totalCost != null && totalCost > 0) ? Math.round(profit! / totalCost * 10000) / 100 : null
     return {
       ...h,
-      shares: h.shares,
       marketValue,
       avgCost,
       totalCost,

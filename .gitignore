@@ -37,3 +37,6 @@ scripts/screenshots/
 .claude/screenshots/
 .vercel
 .env*
+
+# 一次性校正腳本的備份（含使用者資料，不進 git）
+backups/

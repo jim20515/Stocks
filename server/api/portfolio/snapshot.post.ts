@@ -5,71 +5,33 @@ export default defineEventHandler(async (event) => {
 
   // 取得所有持股
   const [{ data: holdings }, { data: settings }] = await Promise.all([
-    client.from('stock_holdings').select('*').eq('user_id', userId).order('buy_date'),
+    client.from('stock_holdings').select('*').eq('user_id', userId).order('buy_date').order('id'),
     client.from('portfolio_settings').select('cash_amount').eq('user_id', userId).single(),
   ])
 
   if (!holdings?.length) return { success: true, skipped: true }
 
-  // 按帳戶分組計算 WACC（與 summary API 相同邏輯）
-  const runningMap: Record<string, Record<string, { totalCost: number; totalShares: number }>> = {}
-  for (const h of holdings) {
-    const code = h.stock_code.toUpperCase()
-    const acct = h.account ?? ''
-    if (!runningMap[acct]) runningMap[acct] = {}
-    if (!runningMap[acct][code]) runningMap[acct][code] = { totalCost: 0, totalShares: 0 }
-    if (h.shares > 0) {
-      runningMap[acct][code].totalCost += Number(h.average_cost) * h.shares
-      runningMap[acct][code].totalShares += h.shares
-    } else {
-      const { totalCost, totalShares } = runningMap[acct][code]
-      const wacc = totalShares > 0 ? totalCost / totalShares : Number(h.average_cost)
-      const abs = Math.abs(h.shares)
-      runningMap[acct][code].totalCost = Math.max(0, totalCost - wacc * abs)
-      runningMap[acct][code].totalShares = Math.max(0, totalShares - abs)
-    }
-  }
-
-  // 收集所有有淨持股的代號
-  const codesWithShares = new Set<string>()
-  for (const codeMap of Object.values(runningMap)) {
-    for (const [code, { totalShares }] of Object.entries(codeMap)) {
-      if (totalShares > 0) codesWithShares.add(code)
-    }
-  }
-
-  const priceInfos = await fetchPricesWithChange([...codesWithShares])
+  // 依帳戶各自計算 WACC（server/utils/costBasis.ts）
+  const { ledger } = computeCostBasis(holdings)
+  const priceInfos = await fetchPricesWithChange(ledger.openCodes())
 
   let totalValue = 0
   let totalPrevValue = 0
-  let totalCost = 0
-  for (const codeMap of Object.values(runningMap)) {
-    for (const [code, { totalCost: cost, totalShares: shares }] of Object.entries(codeMap)) {
-      if (shares <= 0) continue
-      const wacc = cost / shares
-      const info = priceInfos[code]
-      const price = info?.price ?? wacc
-      const prevClose = info?.prevClose ?? price
-      totalValue += price * shares
-      totalPrevValue += prevClose * shares
-      totalCost += wacc * shares
-    }
+  for (const p of ledger.open()) {
+    const info = priceInfos[p.code]
+    const price = info?.price ?? p.totalCost / p.totalShares
+    const prevClose = info?.prevClose ?? price
+    totalValue += price * p.totalShares
+    totalPrevValue += prevClose * p.totalShares
   }
 
   totalValue = Math.round(totalValue)
-  totalCost = Math.round(totalCost)
+  const totalCost = Math.round(ledger.totalCost())
 
-  // 今日買賣金額
+  // 今日買賣淨現金流（買入 + 成交金額、賣出 − 賣出金額），與排程快照／歷史重算一致
   const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Taipei' })
   const todayTrades = holdings.filter((h: any) => h.buy_date === today)
-  const dailyTradeAmount = Math.round(todayTrades.reduce((s: number, h: any) => {
-    if (h.shares > 0) return s + h.shares * Number(h.average_cost)
-    const code = h.stock_code.toUpperCase()
-    const acct = h.account ?? ''
-    const entry = runningMap[acct]?.[code]
-    const wacc = entry?.totalShares > 0 ? entry.totalCost / entry.totalShares : Number(h.average_cost)
-    return s + h.shares * wacc
-  }, 0))
+  const dailyTradeAmount = Math.round(tradeCashFlow(todayTrades))
 
   const dailyChange = Math.round(totalValue - totalPrevValue - dailyTradeAmount)
   const dailyChangePct = totalPrevValue > 0

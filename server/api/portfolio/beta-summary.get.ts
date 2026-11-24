@@ -6,51 +6,57 @@ export default defineEventHandler(async (event) => {
 
   const [{ data: settings }, { data: holdings }] = await Promise.all([
     client.from('portfolio_settings').select('*').eq('user_id', userId).single(),
-    client.from('stock_holdings').select('*').eq('user_id', userId).order('stock_code'),
+    client.from('stock_holdings').select('*').eq('user_id', userId).order('buy_date').order('id'),
   ])
 
   const s = settings ?? { cash_amount: 0, target_beta: 1.46 }
 
-  // 軋出每檔股票的淨持股與 WACC
-  const netMap: Record<string, { netShares: number; totalBuyCost: number; totalBuyShares: number; stockName: string; leverageMultiplier: number; lastId: number }> = {}
-  for (const h of (holdings ?? [])) {
+  // 每檔股票：各帳戶各自 WACC 的持倉加總（costBasis.ts，與持股管理一致）
+  const rows: any[] = holdings ?? []
+  const { ledger } = computeCostBasis(rows)
+  const meta: Record<string, { stockName: string; leverageMultiplier: number; lastId: number }> = {}
+  for (const h of rows) {
     const code = h.stock_code.toUpperCase()
-    if (!netMap[code]) netMap[code] = { netShares: 0, totalBuyCost: 0, totalBuyShares: 0, stockName: h.stock_name, leverageMultiplier: Number(h.leverage_multiplier), lastId: h.id }
-    netMap[code].netShares += h.shares
-    if (h.shares > 0) {
-      netMap[code].totalBuyCost += Number(h.average_cost) * h.shares
-      netMap[code].totalBuyShares += h.shares
-    }
-    netMap[code].lastId = h.id
+    if (!meta[code]) meta[code] = { stockName: h.stock_name, leverageMultiplier: Number(h.leverage_multiplier), lastId: h.id }
+    meta[code].lastId = h.id
+  }
+  const netMap: Record<string, { netShares: number; totalCost: number }> = {}
+  for (const p of ledger.open()) {
+    const e = (netMap[p.code] ??= { netShares: 0, totalCost: 0 })
+    e.netShares += p.totalShares
+    e.totalCost += p.totalCost
   }
 
-  // 只保留淨持股 > 0 的股票
-  const codes = Object.keys(netMap).filter(c => netMap[c].netShares > 0)
+  const codes = Object.keys(netMap).sort()
   const prices = await fetchPrices(codes)
 
   const totalValue = codes.reduce((sum, code) => {
-    const { netShares, totalBuyCost, totalBuyShares } = netMap[code]
-    const wacc = totalBuyShares > 0 ? totalBuyCost / totalBuyShares : 0
-    const price = prices[code] ?? wacc
+    const { netShares, totalCost } = netMap[code]
+    const price = prices[code] ?? totalCost / netShares
     return sum + price * netShares
   }, 0) + Number(s.cash_amount)
 
   const items = codes.map(code => {
-    const { netShares, totalBuyCost, totalBuyShares, stockName, leverageMultiplier, lastId } = netMap[code]
-    const wacc = totalBuyShares > 0 ? totalBuyCost / totalBuyShares : 0
+    const { netShares, totalCost } = netMap[code]
+    const { stockName, leverageMultiplier, lastId } = meta[code]
+    const wacc = totalCost / netShares
     const price = prices[code] ?? null
     const marketValue = (price ?? wacc) * netShares
     const allocation = totalValue > 0 ? marketValue / totalValue : 0
     const betaContrib = allocation * leverageMultiplier
+    const costRounded = Math.round(totalCost)
+    const mvRounded = Math.round(marketValue)
     return {
       id: lastId,
       stockCode: code,
       stockName,
       shares: netShares,
       averageCost: Math.round(wacc * 100) / 100,
+      totalCost: costRounded,
+      profit: mvRounded - costRounded,
       leverageMultiplier,
       currentPrice: price,
-      marketValue: Math.round(marketValue),
+      marketValue: mvRounded,
       allocation: Math.round(allocation * 1e6) / 1e6,
       betaContrib: Math.round(betaContrib * 1e6) / 1e6,
     }
