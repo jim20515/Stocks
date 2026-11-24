@@ -3,16 +3,31 @@ export default defineEventHandler(async (event) => {
   const token = getBearerToken(event)
   const client = useDb(token)
 
+  // Supabase max-rows = 1000：交易紀錄分頁抓完，避免漏算賣出
+  async function fetchAllHoldings() {
+    const PAGE = 1000
+    const all: any[] = []
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await client
+        .from('stock_holdings')
+        .select('id, stock_code, shares, average_cost, account, buy_date')
+        .eq('user_id', userId)
+        .order('buy_date').order('id')
+        .range(from, from + PAGE - 1)
+      if (error) return { data: null, error }
+      all.push(...(data ?? []))
+      if (!data || data.length < PAGE) break
+    }
+    return { data: all, error: null }
+  }
+
   const [{ data, error }, { data: holdings, error: hErr }] = await Promise.all([
     client
       .from('portfolio_daily_snapshot')
       .select('date, total_value, total_cost, daily_trade_amount')
       .eq('user_id', userId)
       .order('date', { ascending: false }),
-    client
-      .from('stock_holdings')
-      .select('id, stock_code, shares, average_cost, account, buy_date')
-      .eq('user_id', userId),
+    fetchAllHoldings(),
   ])
 
   if (error) throw createError({ statusCode: 500, message: error.message })
