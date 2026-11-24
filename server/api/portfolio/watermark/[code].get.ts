@@ -1,24 +1,5 @@
+import { fetchSplitAdjustedATH } from '~~/server/utils/athPrice'
 
-interface YahooChartResp {
-  chart: {
-    result?: Array<{
-      indicators: { quote: Array<{ high: (number | null)[] }> }
-    }>
-  }
-}
-
-async function fetchATH(code: string): Promise<number | null> {
-  for (const suffix of ['.TW', '.TWO']) {
-    try {
-      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${code}${suffix}?interval=1mo&range=max&includePrePost=false`
-      const data = await $fetch<YahooChartResp>(url)
-      const highs = data?.chart?.result?.[0]?.indicators?.quote?.[0]?.high ?? []
-      const ath = Math.max(...highs.filter((v): v is number => v !== null && !isNaN(v)))
-      if (isFinite(ath) && ath > 0) return Math.round(ath * 100) / 100
-    } catch {}
-  }
-  return null
-}
 
 export default defineEventHandler(async (event) => {
   const userId = await requireUser(event)
@@ -39,7 +20,7 @@ export default defineEventHandler(async (event) => {
 
   const [prices, ath] = await Promise.all([
     fetchPrices([code]),
-    fetchATH(code),
+    fetchSplitAdjustedATH(code, client),
   ])
 
   const currentPrice = prices[code] ?? null
