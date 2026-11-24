@@ -15,12 +15,13 @@
 //   node --env-file=.env scripts/fix-split-prices.ts --code 00662                                  # 預覽
 //   node --env-file=.env scripts/fix-split-prices.ts --code 00662 --snapshots-from 2026-11-02 --user <uid>
 //   node --env-file=.env scripts/fix-split-prices.ts --code 00662 --snapshots-from 2026-11-02 --user <uid> --apply
+//   node --env-file=.env scripts/fix-split-prices.ts --user <uid> --fill-months 2026-10,2026-11 --apply   # 補缺漏日線（只新增，不覆蓋）
 //   node --env-file=.env scripts/fix-split-prices.ts --restore backups/split-fix-xxxx.json
 
 import { createClient } from '@supabase/supabase-js'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { computeCostBasis, tradeCashFlow } from '../server/utils/costBasis.ts'
-import { fetchAllDailyPrices } from '../server/utils/splitAdjust.ts'
+import { fetchAllDailyPrices, adjustRawPrice, dedupeSplits } from '../server/utils/splitAdjust.ts'
 
 const args = process.argv.slice(2)
 const flag = (name: string) => args.includes(name)
@@ -83,11 +84,44 @@ function findUnadjusted(rows: PriceRow[], splitDate: string, ratio: number): { r
   return { rows: before, reason: `基準日以前 ${before.length} 筆都未還原` }
 }
 
+function parseRoc(rows: any[]): { date: string; close_price: number }[] {
+  const out: { date: string; close_price: number }[] = []
+  for (const row of rows ?? []) {
+    const close = parseFloat(String(row[6] ?? '').replace(/,/g, ''))
+    const parts = String(row[0] ?? '').split('/')
+    if (!(close > 0) || parts.length < 3) continue
+    out.push({ date: `${parseInt(parts[0]!) + 1911}-${parts[1]!.padStart(2, '0')}-${parts[2]!.padStart(2, '0')}`, close_price: close })
+  }
+  return out
+}
+
+/** 證交所→櫃買抓某月原始收盤價（未還原分割） */
+async function fetchRawMonth(code: string, ym: string) {
+  const [y, m] = ym.split('-')
+  const headers = { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json' }
+  try {
+    const r = await fetch(`https://www.twse.com.tw/exchangeReport/STOCK_DAY?response=json&date=${y}${m}01&stockNo=${code}`, { headers })
+    const j: any = await r.json()
+    if (j?.stat === 'OK' && j.data?.length) return parseRoc(j.data)
+  } catch {}
+  try {
+    const r = await fetch(`https://www.tpex.org.tw/web/stock/aftertrading/daily_trading_info/st43_result.php?l=zh-tw&d=${Number(y) - 1911}/${m}&stkno=${code}&o=json`, { headers })
+    const j: any = await r.json()
+    if (j?.aaData?.length) return parseRoc(j.aaData)
+  } catch {}
+  return []
+}
+
 async function restore(file: string) {
   const backup = JSON.parse(readFileSync(file, 'utf8'))
   const prices: PriceRow[] = backup.prices ?? []
   const snaps: SnapRow[] = backup.snapshots ?? []
-  console.log(`還原日線 ${prices.length} 筆、快照 ${snaps.length} 筆…`)
+  const inserted: PriceRow[] = backup.insertedPrices ?? []
+  console.log(`還原日線 ${prices.length} 筆、刪除補入日線 ${inserted.length} 筆、快照 ${snaps.length} 筆…`)
+  for (const r of inserted) {
+    const { error } = await db.from('stock_daily_prices').delete().eq('stock_code', r.stock_code).eq('date', r.date)
+    if (error) throw new Error(`刪除補入日線失敗：${error.message}`)
+  }
   for (let i = 0; i < prices.length; i += 500) {
     const { error } = await db.from('stock_daily_prices').upsert(prices.slice(i, i + 500), { onConflict: 'stock_code,date' })
     if (error) throw new Error(`還原日線失敗：${error.message}`)
@@ -109,6 +143,41 @@ async function main() {
   const snapsFrom = opt('--snapshots-from')
   const onlyUser = opt('--user')
   if (snapsFrom && !onlyUser) throw new Error('重算快照需要指定 --user')
+
+  // 注意：要先跑完「日線 ÷倍數」校正再補缺漏，否則補入的已還原價格會在未還原段落中製造假跳點
+  const fillMonths = opt('--fill-months')
+  if (fillMonths) {
+    if (!onlyUser) throw new Error('補日線需要指定 --user（補該使用者在這些月份有持股的代號）')
+    const months = fillMonths.split(',').map(x => x.trim()).filter(Boolean)
+    const holdings = await fetchAll('stock_holdings', 'stock_code, shares, buy_date', q => q.eq('user_id', onlyUser), ['buy_date'])
+    const lastDay = months.map(ym => { const [y, m] = ym.split('-').map(Number); return `${ym}-${String(new Date(y!, m!, 0).getDate()).padStart(2, '0')}` }).sort().pop()!
+    const codes = [...new Set(holdings.filter((h: any) => h.buy_date <= lastDay).map((h: any) => String(h.stock_code).toUpperCase()))]
+    const splitRows = await fetchAll('stock_splits', 'stock_code, split_date, ratio', q => q.eq('status', 'applied').eq('adjust_daily_prices', true), ['id'])
+    const priceSplits = dedupeSplits(splitRows.map((r: any) => ({ stock_code: String(r.stock_code), split_date: String(r.split_date), ratio: Number(r.ratio) })))
+    const toInsert: PriceRow[] = []
+    for (const code of codes) {
+      for (const ym of months) {
+        const existing = new Set((await fetchAllDailyPrices(db, code, { from: `${ym}-01`, to: `${ym}-31` })).map(r => r.date))
+        const raw = await fetchRawMonth(code, ym)
+        await new Promise(r => setTimeout(r, 1200)) // 證交所有頻率限制
+        const missing = raw.filter(r => !existing.has(r.date))
+          .map(r => ({ stock_code: code, date: r.date, close_price: adjustRawPrice(priceSplits, code, r.date, r.close_price) }))
+        if (missing.length) console.log(`  ${code} ${ym}：DB ${existing.size} 筆、來源 ${raw.length} 筆，缺 ${missing.length} 筆（${missing.map(m => `${m.date.slice(5)} ${m.close_price}`).join('、')}）`)
+        else if (!raw.length) console.log(`  ${code} ${ym}：證交所／櫃買都抓不到資料`)
+        toInsert.push(...missing)
+      }
+    }
+    if (!apply) return console.log(`\n預覽完成：要補入日線 ${toInsert.length} 筆（未寫入）。加 --apply 才會寫入。`)
+    if (!toInsert.length) return console.log('沒有缺漏的日線')
+    mkdirSync('backups', { recursive: true })
+    const file = `backups/split-fill-${new Date().toISOString().replace(/[:.]/g, '-')}.json`
+    writeFileSync(file, JSON.stringify({ createdAt: new Date().toISOString(), insertedPrices: toInsert }, null, 2))
+    for (let i = 0; i < toInsert.length; i += 500) {
+      const { error } = await db.from('stock_daily_prices').upsert(toInsert.slice(i, i + 500), { onConflict: 'stock_code,date', ignoreDuplicates: true })
+      if (error) throw new Error(`補入日線失敗：${error.message}。可用 --restore ${file} 移除已補入的資料`)
+    }
+    return console.log(`已補入日線 ${toInsert.length} 筆（記錄於 ${file}，可用 --restore 移除）`)
+  }
 
   const splits = await fetchAll('stock_splits', 'id, user_id, stock_code, split_date, ratio, adjust_daily_prices, status, snapshot_data',
     q => {
