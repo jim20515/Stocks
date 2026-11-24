@@ -36,67 +36,35 @@ export default defineEventHandler(async (event) => {
     try {
       // 取得該用戶持股與設定
       const [{ data: holdings }, { data: settings }] = await Promise.all([
-        adminClient.from('stock_holdings').select('*').eq('user_id', userId).order('buy_date'),
+        adminClient.from('stock_holdings').select('*').eq('user_id', userId).order('buy_date').order('id'),
         adminClient.from('portfolio_settings').select('cash_amount').eq('user_id', userId).single(),
       ])
 
       if (!holdings?.length) continue
 
-      // 計算 WACC
-      const runningMap: Record<string, { totalCost: number; totalShares: number }> = {}
-      for (const h of holdings) {
-        const code = h.stock_code.toUpperCase()
-        if (!runningMap[code]) runningMap[code] = { totalCost: 0, totalShares: 0 }
-        if (h.shares > 0) {
-          runningMap[code].totalCost += Number(h.average_cost) * h.shares
-          runningMap[code].totalShares += h.shares
-        } else {
-          const { totalCost, totalShares } = runningMap[code]
-          const wacc = totalShares > 0 ? totalCost / totalShares : Number(h.average_cost)
-          const abs = Math.abs(h.shares)
-          runningMap[code].totalCost = Math.max(0, totalCost - wacc * abs)
-          runningMap[code].totalShares = Math.max(0, totalShares - abs)
-        }
-      }
-
-      // 淨持股
-      const netSharesMap: Record<string, number> = {}
-      for (const h of holdings) {
-        const code = h.stock_code.toUpperCase()
-        netSharesMap[code] = (netSharesMap[code] ?? 0) + h.shares
-      }
-
-      const codes = Object.keys(netSharesMap).filter(c => netSharesMap[c] > 0)
+      // 依帳戶各自計算 WACC（server/utils/costBasis.ts，與持股管理／手動快照一致）
+      const { ledger } = computeCostBasis(holdings)
+      const codes = ledger.openCodes()
+      if (codes.length === 0) continue  // 當日無持股，略過
       const priceInfos = await fetchPricesWithChange(codes)
 
       let totalValue = 0
       let totalPrevValue = 0
-      let totalCost = 0
-      for (const code of codes) {
-        const netShares = netSharesMap[code]
-        const info = priceInfos[code]
-        const wacc = runningMap[code]?.totalShares > 0
-          ? runningMap[code].totalCost / runningMap[code].totalShares : 0
-        const price = info?.price ?? wacc
+      for (const p of ledger.open()) {
+        const info = priceInfos[p.code]
+        const price = info?.price ?? p.totalCost / p.totalShares
         const prevClose = info?.prevClose ?? price
-        totalValue += price * netShares
-        totalPrevValue += prevClose * netShares
-        totalCost += wacc * netShares
+        totalValue += price * p.totalShares
+        totalPrevValue += prevClose * p.totalShares
       }
-
-      if (codes.length === 0) continue  // 當日無持股，略過
 
       totalValue = Math.round(totalValue)  // 不含現金，純股票市值
-      totalCost = Math.round(totalCost)
+      const totalCost = Math.round(ledger.totalCost())
 
+      // 今日買賣淨現金流（用成交價），扣除後只反映股價變動
       const todayTrades = (holdings ?? []).filter((h: any) => h.buy_date === today)
-      const dailyTradeAmount = Math.round(todayTrades.reduce((s: number, h: any) => s + h.shares * Number(h.average_cost), 0))
-
-      // 扣除今日買賣對市值的影響（用成交價），保留買入當天的價差獲利
-      let tradeMarketImpact = 0
-      for (const h of todayTrades) {
-        tradeMarketImpact += h.shares * Number(h.average_cost)
-      }
+      const tradeMarketImpact = tradeCashFlow(todayTrades)
+      const dailyTradeAmount = Math.round(tradeMarketImpact)
       const pureDailyChange = Math.round(totalValue - totalPrevValue - tradeMarketImpact)
       const dailyChangePct = totalPrevValue > 0
         ? Math.round(pureDailyChange / totalPrevValue * 10000) / 100

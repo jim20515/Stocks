@@ -1,4 +1,5 @@
 import { fetchPricesWithChange } from './stockPrice'
+import { computeCostBasis, tradeCashFlow } from './costBasis'
 
 interface TwseDayResp {
   stat?: string
@@ -145,33 +146,9 @@ export async function recalculateSnapshots(
     const d = snap.date
     const subHoldings = holdingsList.filter(h => h.buy_date <= d)
 
-    // 按帳戶分組計算 WACC（與 summary / snapshot.post API 相同邏輯）
-    const runningMap: Record<string, Record<string, { totalCost: number; totalShares: number }>> = {}
-    for (const h of subHoldings) {
-      const code = h.stock_code.toUpperCase()
-      const acct = h.account ?? ''
-      if (!runningMap[acct]) runningMap[acct] = {}
-      if (!runningMap[acct][code]) runningMap[acct][code] = { totalCost: 0, totalShares: 0 }
-      if (h.shares > 0) {
-        runningMap[acct][code].totalCost += Number(h.average_cost) * h.shares
-        runningMap[acct][code].totalShares += h.shares
-      } else {
-        const { totalCost, totalShares } = runningMap[acct][code]
-        const wacc = totalShares > 0 ? totalCost / totalShares : Number(h.average_cost)
-        const abs = Math.abs(h.shares)
-        runningMap[acct][code].totalCost = Math.max(0, totalCost - wacc * abs)
-        runningMap[acct][code].totalShares = Math.max(0, totalShares - abs)
-      }
-    }
-
-    // 收集所有有淨持股的代號
-    const activeCodesSet = new Set<string>()
-    for (const codeMap of Object.values(runningMap)) {
-      for (const [code, { totalShares }] of Object.entries(codeMap)) {
-        if (totalShares > 0) activeCodesSet.add(code)
-      }
-    }
-    const activeCodes = [...activeCodesSet]
+    // 依帳戶各自計算 WACC（costBasis.ts，與 summary / snapshot.post 相同）
+    const { ledger } = computeCostBasis(subHoldings)
+    const activeCodes = ledger.openCodes()
     if (!activeCodes.length) continue
 
     // 取得當日價格
@@ -190,27 +167,19 @@ export async function recalculateSnapshots(
     }
 
     let totalValue = 0
-    let totalCost = 0
-    for (const codeMap of Object.values(runningMap)) {
-      for (const [code, { totalCost: cost, totalShares: shares }] of Object.entries(codeMap)) {
-        if (shares <= 0) continue
-        const wacc = cost / shares
-        const price = (prices[code] && prices[code] > 0) ? prices[code] : wacc
-        totalValue += price * shares
-        totalCost += wacc * shares
-      }
+    for (const p of ledger.open()) {
+      const px = prices[p.code]
+      const price = (px != null && px > 0) ? px : p.totalCost / p.totalShares
+      totalValue += price * p.totalShares
     }
 
     totalValue = Math.round(totalValue)
-    totalCost = Math.round(totalCost)
+    const totalCost = Math.round(ledger.totalCost())
 
-    // 當日買賣交易額
+    // 當日買賣淨現金流（用成交價）
     const todayTrades = subHoldings.filter(h => h.buy_date === d)
-    const dailyTradeAmount = Math.round(todayTrades.reduce((s, h) => s + Number(h.shares) * Number(h.average_cost), 0))
-    let tradeMarketImpact = 0
-    for (const h of todayTrades) {
-      tradeMarketImpact += Number(h.shares) * Number(h.average_cost)
-    }
+    const tradeMarketImpact = tradeCashFlow(todayTrades)
+    const dailyTradeAmount = Math.round(tradeMarketImpact)
 
     // 取前一交易日快照數值
     const { data: prevSnapArr } = await client

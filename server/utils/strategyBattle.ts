@@ -81,13 +81,14 @@ export type BattleResult = {
 
 type Holding = {
   stock_code: string
+  account?: string | null
   shares: number
   average_cost: number | string
   buy_date: string
 }
 
 /**
- * 依 stock_code 分組跑 LIFO 分批配對：
+ * 依「帳戶 × stock_code」分組跑 LIFO 分批配對（不同帳戶的買賣不互相配對，與持股管理一致）：
  * - 買入 → 建立一個未平倉批次（記手續費/股）。
  * - 賣出 → 從「最近的批次」開始逐一配對（後進先出），可跨批、可拆批，每段配對成一筆 pair。
  * - 剩餘未平倉批次 → 用現價算未實現損益。
@@ -97,10 +98,11 @@ export function computeLifoResult(
   priceMap: Record<string, number>,
   includeFee: boolean,
 ): BattleResult {
-  const byCode: Record<string, Holding[]> = {}
+  const byCode: Record<string, { code: string; rows: Holding[] }> = {}
   for (const h of holdings) {
     const code = h.stock_code.toUpperCase()
-    ;(byCode[code] ??= []).push(h)
+    const acct = (h.account ?? '').trim()
+    ;(byCode[`${acct}\u0000${code}`] ??= { code, rows: [] }).rows.push(h)
   }
 
   const pairs: BattlePair[] = []
@@ -113,7 +115,7 @@ export function computeLifoResult(
   let winCount = 0
   let remainingShares = 0
 
-  for (const [code, rows] of Object.entries(byCode)) {
+  for (const { code, rows } of Object.values(byCode)) {
     // 未平倉批次（陣列尾端 = 最近買入 = LIFO 先配對）；sharesAfterBuy = 買入當下的庫存
     const lots: { date: string; price: number; shares: number; feePerShare: number; sharesAfterBuy: number }[] = []
     const taxRate = taxRateFor(code)
