@@ -1,3 +1,4 @@
+import { adjustTradesForSplits, recordSplitTradeOriginals } from '~~/server/utils/splitTrades'
 
 export default defineEventHandler(async (event) => {
   const userId = await requireUser(event)
@@ -27,8 +28,19 @@ export default defineEventHandler(async (event) => {
     }
   })
 
-  const { error } = await client.from('stock_holdings').insert(rows)
+  // 交易日在已套用分割的基準日以前 → 依分割換算股數與價格
+  const adj = await adjustTradesForSplits(client, userId, rows)
+
+  const { data, error } = await client.from('stock_holdings').insert(rows).select('id')
   if (error) throw createError({ statusCode: 500, message: error.message })
 
-  return { imported: rows.length }
+  if (adj.applied.size) {
+    try {
+      await recordSplitTradeOriginals(client, userId, adj, (data ?? []).map((r: any) => r.id))
+    } catch (e: any) {
+      adj.notes.push(`（無法記入分割紀錄，之後還原分割時這些單據不會一起還原：${e?.message ?? e}）`)
+    }
+  }
+
+  return { imported: rows.length, splitAdjusted: adj.applied.size, splitNotes: adj.notes }
 })

@@ -1,5 +1,6 @@
 import { fetchPricesWithChange } from './stockPrice'
 import { computeCostBasis, tradeCashFlow } from './costBasis'
+import { fetchPriceSplits, adjustRawPrice, type PriceSplit } from './splitAdjust'
 
 interface TwseDayResp {
   stat?: string
@@ -29,8 +30,11 @@ async function fetchTwseClosePrice(code: string, dateStr: string): Promise<numbe
   return null
 }
 
-/** 取得歷史指定日期的收盤價（優先讀 DB，若無則打 TWSE / Yahoo 備援） */
-export async function getHistoricalClosePrice(client: any, code: string, dateStr: string): Promise<number | null> {
+/** 取得歷史指定日期的收盤價（優先讀 DB，若無則打 TWSE / Yahoo 備援，最後沿用前一筆收盤）。
+ *  splits：TWSE 回傳未還原分割的原始價，需依分割紀錄還原後才能寫入共用日線表。 */
+export async function getHistoricalClosePrice(
+  client: any, code: string, dateStr: string, splits: PriceSplit[] = [],
+): Promise<number | null> {
   const normalizedCode = code.toUpperCase()
 
   // 1. 先查資料庫 stock_daily_prices
@@ -49,7 +53,8 @@ export async function getHistoricalClosePrice(client: any, code: string, dateStr
   } catch {}
 
   // 2. TWSE 個股月報
-  const twsePrice = await fetchTwseClosePrice(normalizedCode, dateStr)
+  const rawTwsePrice = await fetchTwseClosePrice(normalizedCode, dateStr)
+  const twsePrice = rawTwsePrice != null ? adjustRawPrice(splits, normalizedCode, dateStr, rawTwsePrice) : null
   if (twsePrice != null && twsePrice > 0) {
     // 寫入 DB 快取，方便後續查詢
     try {
@@ -86,6 +91,19 @@ export async function getHistoricalClosePrice(client: any, code: string, dateStr
         }
       }
     }
+  } catch {}
+
+  // 4. 當天沒有成交（停止交易，例如分割換發期間、或日線缺漏）→ 沿用前一筆收盤（不寫回 DB）
+  try {
+    const { data } = await client
+      .from('stock_daily_prices')
+      .select('close_price')
+      .eq('stock_code', normalizedCode)
+      .lt('date', dateStr)
+      .order('date', { ascending: false })
+      .limit(1)
+    const p = Number(data?.[0]?.close_price)
+    if (Number.isFinite(p) && p > 0) return p
   } catch {}
 
   return null
@@ -139,6 +157,9 @@ export async function recalculateSnapshots(
     .order('id', { ascending: true })
 
   const holdingsList: any[] = allHoldings || []
+
+  const recalcCodes = [...new Set(holdingsList.map(h => String(h.stock_code).toUpperCase()))]
+  const priceSplits = await fetchPriceSplits(useServiceDb() ?? client, recalcCodes)
   const todayStr = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Taipei' })
 
   // 3. 逐日重算
@@ -161,7 +182,7 @@ export async function recalculateSnapshots(
       }
     } else {
       for (const c of activeCodes) {
-        const p = await getHistoricalClosePrice(client, c, d)
+        const p = await getHistoricalClosePrice(client, c, d, priceSplits)
         prices[c] = p ?? 0
       }
     }

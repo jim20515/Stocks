@@ -242,13 +242,13 @@ async function confirmImport() {
     const filtered = importPreview.value
       .filter((r: any) => importFilterCodes.value.has(r.stockCode))
       .map((r: any) => ({ ...r, account: importAccount.value || null }))
-    await ($authFetch as any)('/api/stockholdings/import', {
+    const res = await ($authFetch as any)('/api/stockholdings/import', {
       method: 'POST',
       body: { items: filtered },
     })
     refreshKey.value++
     showImportModal.value = false
-    toast.success(`已匯入 ${filtered.length} 筆持股`)
+    toast.success(`已匯入 ${filtered.length} 筆持股` + (res?.splitAdjusted ? `，其中 ${res.splitAdjusted} 筆在分割基準日以前，已依分割換算股數與價格` : ''), res?.splitAdjusted ? 6000 : undefined)
   } catch (error: any) {
     detectError.value = `匯入失敗：${getImportErrorMessage(error)}`
   } finally {
@@ -419,13 +419,15 @@ async function submitForm() {
     watermarkPrice: form.value.watermarkPrice ? Number(form.value.watermarkPrice) : null,
     account: form.value.account?.trim() || null,
   }
+  let splitNotes: string[] = []
   if (editingId.value) {
     await ($authFetch as any)(`/api/stockholdings/${editingId.value}`, { method: 'PUT', body: payload })
   } else {
-    await ($authFetch as any)('/api/stockholdings', { method: 'POST', body: payload })
+    const res = await ($authFetch as any)('/api/stockholdings', { method: 'POST', body: payload })
+    splitNotes = res?.splitNotes ?? []
   }
   refreshKey.value++
-  toast.success(editingId.value ? '已儲存變更' : '已新增交易')
+  toast.success(editingId.value ? '已儲存變更' : (splitNotes.length ? `已新增交易：${splitNotes.join('；')}` : '已新增交易'), splitNotes.length ? 6000 : undefined)
   closeModal()
 }
 

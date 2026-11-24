@@ -1,3 +1,5 @@
+import { fetchPriceSplits, adjustRawPrice, type PriceSplit } from '~~/server/utils/splitAdjust'
+
 export default defineEventHandler(async (event) => {
   const userId = await requireUser(event)
   const token = getBearerToken(event)
@@ -52,6 +54,16 @@ export default defineEventHandler(async (event) => {
   const dayMap: Record<string, Record<string, number>> = {}
   const priorPriceMap: Record<string, number> = {}
 
+  // 證交所／櫃買回傳的是未還原分割的原始價，寫入共用日線表與計算市值前一律還原（見 splitAdjust.ts）。
+  // 分割紀錄跨使用者共用同一張日線表，用 service client 讀全部；未設定金鑰時退回只讀自己的。
+  let priceSplits: PriceSplit[] = []
+  try {
+    priceSplits = await fetchPriceSplits(useServiceDb() ?? client, activeCodes)
+  } catch (e: any) {
+    throw createError({ statusCode: 500, message: `讀取股票分割紀錄失敗，為避免寫入未還原的股價已中止：${e?.message ?? e}` })
+  }
+  if (priceSplits.length) debugLog.push(`分割還原：${priceSplits.map(s => `${s.stock_code} ${s.split_date} 1拆${s.ratio}`).join('、')}`)
+
   for (const code of activeCodes) {
     // 先載入 DB 既有資料；後續仍會重新抓當月資料補齊，避免「只有部分資料卻整月跳過」。
     const { data: existing } = await client
@@ -100,7 +112,7 @@ export default defineEventHandler(async (event) => {
           const parts = dateRaw.split('/')
           if (parts.length < 3) continue
           const isoDate = `${parseInt(parts[0]) + 1911}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`
-          toInsert.push({ stock_code: code, date: isoDate, close_price: close })
+          toInsert.push({ stock_code: code, date: isoDate, close_price: adjustRawPrice(priceSplits, code, isoDate, close) })
         }
         if (toInsert.length) {
           const { error: upsertErr } = await client
@@ -142,7 +154,7 @@ export default defineEventHandler(async (event) => {
             const parts = dateRaw.split('/')
             if (parts.length < 3) continue
             const isoDate = `${parseInt(parts[0]) + 1911}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`
-            toInsert.push({ stock_code: code, date: isoDate, close_price: close })
+            toInsert.push({ stock_code: code, date: isoDate, close_price: adjustRawPrice(priceSplits, code, isoDate, close) })
           }
           if (toInsert.length) {
             const { error: upsertErr } = await client

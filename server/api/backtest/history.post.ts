@@ -1,3 +1,5 @@
+import { fetchPriceSplits, adjustRawPrices } from '~~/server/utils/splitAdjust'
+
 type DailyPrice = {
   date: string
   close_price: number
@@ -183,6 +185,9 @@ export default defineEventHandler(async (event) => {
     cursor = addMonth(cursor)
   }
 
+  // TWSE/TPEx 是未還原分割的原始價，寫入共用日線表前先還原（Yahoo 已還原，不再處理）
+  const splits = await fetchPriceSplits(useServiceDb() ?? client, [code])
+
   let inserted = 0
   const logs: string[] = []
   const monthResults: { key: string; hasData: boolean }[] = []
@@ -209,10 +214,11 @@ export default defineEventHandler(async (event) => {
       continue
     }
     monthResults.push({ key: m.key, hasData: true })
+    const monthPrices = fetched.source === 'Yahoo' ? fetched.prices : adjustRawPrices(splits, code, fetched.prices)
 
     const existingDates = new Set((existing ?? []).map(row => row.date))
     const missingByDate = new Map<string, { stock_code: string; date: string; close_price: number }>()
-    for (const row of fetched.prices) {
+    for (const row of monthPrices) {
       if (existingDates.has(row.date)) continue
       if (missingByDate.has(row.date)) continue
       missingByDate.set(row.date, { stock_code: code, date: row.date, close_price: row.close_price })
