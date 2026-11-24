@@ -110,7 +110,7 @@ async function main() {
   const onlyUser = opt('--user')
   if (snapsFrom && !onlyUser) throw new Error('重算快照需要指定 --user')
 
-  const splits = await fetchAll('stock_splits', 'id, user_id, stock_code, split_date, resume_date, ratio, adjust_daily_prices, status, snapshot_data',
+  const splits = await fetchAll('stock_splits', 'id, user_id, stock_code, split_date, ratio, adjust_daily_prices, status, snapshot_data',
     q => {
       let x = q.eq('status', 'applied').eq('adjust_daily_prices', true)
       if (code) x = x.eq('stock_code', code)
@@ -149,7 +149,8 @@ async function main() {
   const snapFixes: SnapRow[] = []
   if (snapsFrom && onlyUser) {
     const userSplits = splits.filter(s => s.user_id === onlyUser)
-    const resume = userSplits.map(s => s.resume_date ?? s.snapshot_data?.resume_date).filter(Boolean).sort()[0] as string | undefined
+    // 線上 stock_splits 可能沒有 resume_date 欄位（013 migration 未套用），一律讀 snapshot_data 內的備份
+    const resume = userSplits.map(s => s.snapshot_data?.resume_date).filter(Boolean).sort()[0] as string | undefined
     if (!resume) throw new Error('分割紀錄沒有恢復交易日，無法決定快照重算範圍')
 
     const holdings = await fetchAll('stock_holdings', 'id, stock_code, shares, average_cost, account, buy_date', q => q.eq('user_id', onlyUser), ['buy_date', 'id'])
